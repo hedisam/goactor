@@ -1,19 +1,19 @@
 package goactor
-/*
-	Exit messages
-	1. Exit messages
-;*/
+
+import (
+	"github.com/hedisam/goactor/internal/pid"
+)
 
 type ExitMessage interface {
-	MsgFrom() PID
+	MsgFrom() pid.InternalPID
 	ExitReason() interface{}
 }
 
 type NormalExit struct {
-	From PID
+	From pid.InternalPID
 }
 
-func (m NormalExit) MsgFrom() PID {
+func (m NormalExit) MsgFrom() pid.InternalPID {
 	return m.From
 }
 
@@ -22,15 +22,14 @@ func (m NormalExit) ExitReason() interface{} {
 }
 
 type AbnormalExit struct {
-	From PID
+	From   pid.InternalPID
 	Reason interface{}
 }
 
-func (m AbnormalExit) MsgFrom() PID {
+func (m AbnormalExit) MsgFrom() pid.InternalPID {
 	return m.From
 }
 
 func (m AbnormalExit) ExitReason() interface{} {
 	return m.Reason
 }
-

@@ -3,27 +3,26 @@ package main
 import (
 	"fmt"
 	"github.com/hedisam/goactor"
-	"time"
 )
 
 type ShutdownMsg struct {
-	sender goactor.PID
+	sender *goactor.PID
 }
 type PingMsg struct {
-	text string
-	sender goactor.PID
+	text   string
+	sender *goactor.PID
 }
 
 func main() {
 	parent, dispose := goactor.NewParentActor(nil)
-	defer dispose()
+	defer dispose(parent)
 
 	pingMsg := PingMsg{text: "ping", sender: parent.Self()}
 
 	pid := goactor.Spawn(ping, nil)
-	goactor.Send(pid, pingMsg)
-	goactor.Send(pid, pingMsg)
-	goactor.Send(pid, ShutdownMsg{parent.Self()})
+	_ = goactor.Send(pid, pingMsg)
+	_ = goactor.Send(pid, pingMsg)
+	_ = goactor.Send(pid, ShutdownMsg{parent.Self()})
 
 	parent.Receive(func(msg interface{}) (loop bool) {
 		fmt.Println("parent:", msg)
@@ -32,16 +31,13 @@ func main() {
 		}
 		return true
 	})
-
-	fmt.Println("waiting for 1 sec")
-	time.Sleep(1 * time.Second)
 }
 
 func ping(actor *goactor.Actor) {
 	actor.Receive(func(msg interface{}) (loop bool) {
 		switch m := msg.(type) {
 		case ShutdownMsg:
-			goactor.Send(m.sender, ShutdownMsg{actor.Self()})
+			_ = goactor.Send(m.sender, ShutdownMsg{actor.Self()})
 			return false
 		case PingMsg:
 			if err := goactor.Send(m.sender, "pong"); err != nil {

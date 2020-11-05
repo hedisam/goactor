@@ -7,40 +7,46 @@ import (
 )
 
 func main() {
+	parentActorLinked()
+}
+
+func parentActorLinked() {
 	parent, dispose := goactor.NewParentActor(nil)
-	defer dispose()
+	defer dispose(parent)
 
+	pid := goactor.Spawn(firstActor, nil)
+	_ = parent.Link(pid)
+
+	_ = goactor.Send(pid, "panic")
+
+	parent.Receive(func(msg interface{}) (loop bool) {
+		fmt.Println("[!] parent received:", msg)
+		return false
+	})
+}
+
+func multipleLinkedActors() {
 	firstPID := goactor.Spawn(firstActor, nil)
-	//secondPID := goactor.Spawn(secondActor, nil)
-
-	// linking parent actor to the first one
-	parent.Link(firstPID)
+	secondPID := goactor.Spawn(secondActor, nil)
+	thirdPID := goactor.Spawn(secondActor, nil)
+	fourthPID := goactor.Spawn(secondActor, nil)
 
 	// asking the second actor to get linked to the first one
-	//_ = goactor.Send(secondPID, firstPID)
+	_ = goactor.Send(secondPID, firstPID)
+	_ = goactor.Send(thirdPID, firstPID)
+	_ = goactor.Send(fourthPID, firstPID)
 
 	// send a message to the panicActor to make it panic
 	_ = goactor.Send(firstPID, "A random message to make you panic!")
-
-	parent.Receive(func(msg interface{}) (loop bool) {
-		fmt.Printf("parent actor received: %v\n", msg)
-		return false
-	})
 
 	time.Sleep(3 * time.Second)
 }
 
 func secondActor(actor *goactor.Actor) {
-	//actor.SetTrapExit(true)
 	actor.Receive(func(msg interface{}) (loop bool) {
-		switch message := msg.(type) {
-		case goactor.PID:
-			actor.Link(message)
-			return true
-		default:
-			fmt.Printf("second actor %v received a message: %v\n", actor.ID(), msg)
-			return false
-		}
+		pid, _ := msg.(*goactor.PID)
+		_ = actor.Link(pid)
+		return true
 	})
 }
 
