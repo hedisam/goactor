@@ -11,13 +11,13 @@ import (
 )
 
 const unit = 50 * 10000
-const count = 1 * 1000000
+const count = 10 * 1000000
 
 var counterPID *goactor.PID
 
 func main() {
-	//aggregatedCounting()
-	singleActorCounting()
+	aggregatedCounting()
+	//singleActorCounting()
 }
 
 func aggregatedCounting() {
@@ -68,7 +68,7 @@ func delegator(actor *goactor.Actor) {
 }
 
 func singleActorCounting() {
-	pid := goactor.Spawn(counter, nil)
+	pid := goactor.Spawn(counter, goactor.DefaultQueueMailbox)
 
 	n := count / unit
 	start := make(chan struct{})

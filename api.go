@@ -9,6 +9,10 @@ func NewParentActor(mailboxBuilder MailboxBuilderFunc) (*Actor, func(*Actor)) {
 	return actor, dispose
 }
 
+func NewFutureActor() *FutureActor {
+	return buildFutureActor()
+}
+
 func Spawn(fn ActorFunc, mailboxBuilder MailboxBuilderFunc) *PID {
 	actor, pid := buildActor(mailboxBuilder)
 	go spawn(fn, actor)

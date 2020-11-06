@@ -6,6 +6,7 @@ import (
 	"github.com/hedisam/goactor/internal/relations"
 	"log"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -46,8 +47,12 @@ func (a *Actor) Self() *PID {
 	return NewPID(a.self)
 }
 
-func (a *Actor) Receive(handler func(msg interface{}) (loop bool)) {
+func (a *Actor) Receive(handler func(message interface{}) (loop bool)) {
 	a.mailbox.Receive(handler, a.systemMessageHandler)
+}
+
+func (a *Actor) ReceiveWithTimeout(timeout time.Duration, handler func(message interface{}) (loop bool)) {
+	a.mailbox.ReceiveWithTimeout(timeout, handler, a.systemMessageHandler)
 }
 
 func (a *Actor) Link(pid *PID) error {

@@ -3,6 +3,7 @@ package goactor
 import (
 	p "github.com/hedisam/goactor/internal/pid"
 	"github.com/hedisam/goactor/internal/relations"
+	"time"
 )
 
 func NewPID(intlPID p.InternalPID) *PID {
@@ -19,6 +20,7 @@ func (p *PID) ID() string {
 
 type Mailbox interface {
 	Receive(msgHandler, sysMsgHandler func(interface{}) bool)
+	ReceiveWithTimeout(timeout time.Duration, msgHandler, sysMsgHandler func(interface{}) bool)
 	PushMessage(msg interface{}) error
 	PushSystemMessage(msg interface{}) error
 	Dispose()

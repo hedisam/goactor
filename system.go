@@ -21,6 +21,13 @@ func buildActor(mailboxBuilder MailboxBuilderFunc) (*Actor, *PID) {
 	return actor, NewPID(localPID)
 }
 
+func buildFutureActor() *FutureActor {
+	m := mailbox.NewChanMailbox(1, 1, mailbox.DefaultMailboxTimeout)
+	localPID := p.NewLocalPID(m, nil)
+	featureActor := setupNewFutureActor(m, localPID)
+	return featureActor
+}
+
 func spawn(fn ActorFunc, actor *Actor) {
 	defer dispose(actor)
 	fn(actor)
@@ -34,7 +41,10 @@ func DefaultQueueMailbox() Mailbox {
 }
 
 var DefaultChanMailbox = func() Mailbox {
-	return mailbox.NewChanMailbox()
+	return mailbox.NewChanMailbox(
+		mailbox.DefaultUserMailboxCap,
+		mailbox.DefaultSysMailboxCap,
+		mailbox.DefaultMailboxTimeout)
 }
 
 var DefaultRingBufferMailbox = func() Mailbox {

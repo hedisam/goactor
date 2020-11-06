@@ -24,7 +24,15 @@ func NewQueueMailbox(capacity int, sendTimeout time.Duration, schedulerInterval 
 }
 
 func (m *queueMailbox) Receive(msgHandler, sysMsgHandler func(interface{}) bool) {
+	m.ReceiveWithTimeout(0, msgHandler, sysMsgHandler)
+}
+
+func (m *queueMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sysMsgHandler func(interface{}) bool) {
 	var i uint16
+	var start time.Time
+	if timeout > 0 {
+		start = time.Now()
+	}
 	for {
 		// our first priority is system messages
 		if m.sysMsgQueue.Len() > 0 {
@@ -40,6 +48,10 @@ func (m *queueMailbox) Receive(msgHandler, sysMsgHandler func(interface{}) bool)
 					return
 				}
 			}
+			if timeout > 0 {
+				// we just processed a message so reset the start time
+				start = time.Now()
+			}
 		}
 
 		// checking user mailbox
@@ -53,11 +65,23 @@ func (m *queueMailbox) Receive(msgHandler, sysMsgHandler func(interface{}) bool)
 			if !msgHandler(msg) {
 				return
 			}
+
+			if timeout > 0 {
+				// we just processed a message so reset the start time
+				start = time.Now()
+			}
 		}
+
+		if timeout > 0 && time.Since(start) >= timeout {
+			msgHandler(TimedOut{})
+			return
+		}
+
 		// allowing other goroutines to run
 		if m.goSchedulerInterval > 0 {
 			if i%m.goSchedulerInterval == 0 {
 				runtime.Gosched()
+				// reset the counter
 				i = 1
 				continue
 			}

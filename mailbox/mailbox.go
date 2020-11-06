@@ -19,3 +19,9 @@ const (
 
 var ErrMailboxClosed = fmt.Errorf("target mailbox is closed")
 var ErrMailboxTimeout = fmt.Errorf("mailbox sendTimeout")
+
+type TimedOut struct{}
+
+func (t TimedOut) Error() string {
+	return "receive timeout"
+}
