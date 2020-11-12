@@ -1,6 +1,6 @@
 package relations
 
-import p "github.com/hedisam/goactor/internal/pid"
+import p "github.com/hedisam/goactor/internal/intlpid"
 
 type RelationIterator struct {
 	data   []p.InternalPID

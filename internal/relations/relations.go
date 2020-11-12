@@ -1,7 +1,7 @@
 package relations
 
 import (
-	p "github.com/hedisam/goactor/internal/pid"
+	p "github.com/hedisam/goactor/internal/intlpid"
 	"sync"
 )
 

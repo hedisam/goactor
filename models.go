@@ -1,22 +1,10 @@
 package goactor
 
 import (
-	p "github.com/hedisam/goactor/internal/pid"
+	"github.com/hedisam/goactor/internal/intlpid"
 	"github.com/hedisam/goactor/internal/relations"
 	"time"
 )
-
-func NewPID(intlPID p.InternalPID) *PID {
-	return &PID{intlPID: intlPID}
-}
-
-type PID struct {
-	intlPID p.InternalPID
-}
-
-func (p *PID) ID() string {
-	return p.intlPID.ID()
-}
 
 type Mailbox interface {
 	Receive(msgHandler, sysMsgHandler func(interface{}) bool)
@@ -27,21 +15,21 @@ type Mailbox interface {
 }
 
 type relationManager interface {
-	AddLink(pid p.InternalPID)
-	RemoveLink(pid p.InternalPID)
+	AddLink(pid intlpid.InternalPID)
+	RemoveLink(pid intlpid.InternalPID)
 
-	AddMonitored(pid p.InternalPID)
-	RemoveMonitored(pid p.InternalPID)
+	AddMonitored(pid intlpid.InternalPID)
+	RemoveMonitored(pid intlpid.InternalPID)
 
 	LinkedActors() *relations.RelationIterator
 	MonitorActors() *relations.RelationIterator
 
-	RelationType(pid p.InternalPID) relations.RelationType
+	RelationType(pid intlpid.InternalPID) relations.RelationType
 }
 
 type relationIterator interface {
 	HasNext() bool
-	Value() p.InternalPID
+	Value() intlpid.InternalPID
 }
 
 type ActorFunc func(actor *Actor)

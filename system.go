@@ -1,12 +1,13 @@
 package goactor
 
 import (
-	p "github.com/hedisam/goactor/internal/pid"
+	"github.com/hedisam/goactor/internal/intlpid"
 	"github.com/hedisam/goactor/internal/relations"
 	"github.com/hedisam/goactor/mailbox"
+	p "github.com/hedisam/goactor/pid"
 )
 
-func buildActor(mailboxBuilder MailboxBuilderFunc) (*Actor, *PID) {
+func buildActor(mailboxBuilder MailboxBuilderFunc) (*Actor, *p.PID) {
 	if mailboxBuilder == nil {
 		mailboxBuilder = DefaultQueueMailbox
 	}
@@ -14,16 +15,19 @@ func buildActor(mailboxBuilder MailboxBuilderFunc) (*Actor, *PID) {
 
 	relationManager := relations.NewRelation()
 
-	localPID := p.NewLocalPID(m, relationManager)
+	actor := setupNewActor(m, relationManager)
 
-	actor := setupNewActor(m, localPID, relationManager)
+	localPID := intlpid.NewLocalPID(m, relationManager, false, actor.ctxCancel)
+	pid := p.ToPID(localPID)
+	actor.self = pid
 
-	return actor, NewPID(localPID)
+	return actor, pid
 }
 
 func buildFutureActor() *FutureActor {
-	m := mailbox.NewChanMailbox(1, 1, mailbox.DefaultMailboxTimeout)
-	localPID := p.NewLocalPID(m, nil)
+	noShutdown := func() {}
+	m := mailbox.NewQueueMailbox(10, 10, mailbox.DefaultMailboxTimeout, mailbox.DefaultGoSchedulerInterval)
+	localPID := intlpid.NewLocalPID(m, nil, false, noShutdown)
 	featureActor := setupNewFutureActor(m, localPID)
 	return featureActor
 }
@@ -36,6 +40,7 @@ func spawn(fn ActorFunc, actor *Actor) {
 func DefaultQueueMailbox() Mailbox {
 	return mailbox.NewQueueMailbox(
 		mailbox.DefaultUserMailboxCap,
+		mailbox.DefaultSysMailboxCap,
 		mailbox.DefaultMailboxTimeout,
 		mailbox.DefaultGoSchedulerInterval)
 }

@@ -1,9 +1,12 @@
 package goactor
 
 import (
+	"context"
 	"fmt"
-	p "github.com/hedisam/goactor/internal/pid"
+	"github.com/hedisam/goactor/internal/intlpid"
 	"github.com/hedisam/goactor/internal/relations"
+	p "github.com/hedisam/goactor/pid"
+	"github.com/hedisam/goactor/sysmsg"
 	"log"
 	"sync/atomic"
 	"time"
@@ -18,16 +21,19 @@ type Actor struct {
 	relationManager relationManager
 	mailbox         Mailbox
 	trapExit        int32
-	self            p.InternalPID
+	self            *p.PID
+	ctx 			context.Context
+	ctxCancel		func()
+	msgHandler 		func(message interface{}) (loop bool)
 }
 
-func setupNewActor(mailbox Mailbox, self p.InternalPID, manager relationManager) *Actor {
+func setupNewActor(mailbox Mailbox, manager relationManager) *Actor {
 	a := &Actor{
 		mailbox:         mailbox,
 		relationManager: manager,
 		trapExit:        trapExitNo,
-		self:            self,
 	}
+	a.ctx, a.ctxCancel = context.WithCancel(context.Background())
 	return a
 }
 
@@ -43,152 +49,161 @@ func (a *Actor) SetTrapExit(trap bool) {
 	atomic.StoreInt32(&a.trapExit, trapExitNo)
 }
 
-func (a *Actor) Self() *PID {
-	return NewPID(a.self)
+func (a *Actor) Self() *p.PID {
+	return a.self
 }
 
 func (a *Actor) Receive(handler func(message interface{}) (loop bool)) {
+	a.msgHandler = handler
 	a.mailbox.Receive(handler, a.systemMessageHandler)
 }
 
 func (a *Actor) ReceiveWithTimeout(timeout time.Duration, handler func(message interface{}) (loop bool)) {
+	a.msgHandler = handler
 	a.mailbox.ReceiveWithTimeout(timeout, handler, a.systemMessageHandler)
 }
 
-func (a *Actor) Link(pid *PID) error {
+func (a *Actor) Link(pid *p.PID) error {
 	// first we need to ask the other actor to link to this actor.
-	err := pid.intlPID.Link(a.self)
+	err := intlpid.Link(pid.InternalPID(), a.self.InternalPID())
 	if err != nil {
 		return fmt.Errorf("failed to add this actor to the target's linked actors list: %w", err)
 	}
 	// add the target actor to our linked actors list
-	a.relationManager.AddLink(pid.intlPID)
+	a.relationManager.AddLink(pid.InternalPID())
 	return nil
 }
 
-func (a *Actor) Unlink(pid *PID) error {
+func (a *Actor) Unlink(pid *p.PID) error {
 	// attempt to remove the link from the other actor
-	err := pid.intlPID.Unlink(a.self)
+	err := intlpid.Unlink(pid.InternalPID(), a.self.InternalPID())
 	if err != nil {
 		return fmt.Errorf("failed to remove this actor from the target's linked actors list: %w", err)
 	}
 	// remove the target actor from our linked actors list
-	a.relationManager.RemoveLink(pid.intlPID)
+	a.relationManager.RemoveLink(pid.InternalPID())
 	return nil
 }
 
-func (a *Actor) Monitor(pid *PID) error {
+func (a *Actor) Monitor(pid *p.PID) error {
 	// ask the child actor to be monitored by this actor.
-	err := pid.intlPID.AddMonitor(a.self)
+	err := intlpid.AddMonitor(pid.InternalPID(), a.self.InternalPID())
 	if err != nil {
 		return fmt.Errorf("failed to monitor: %w", err)
 	}
 	// save the child actor as monitored.
-	a.relationManager.AddMonitored(pid.intlPID)
+	a.relationManager.AddMonitored(pid.InternalPID())
 	return nil
 }
 
-func (a *Actor) Demonitor(pid *PID) error {
-	// ask the target actor to be de-monitored by this actor.
-	err := pid.intlPID.RemMonitor(a.self)
+func (a *Actor) Demonitor(pid *p.PID) error {
+	// ask the target actor to be de-monitored.
+	err := intlpid.RemoveMonitor(pid.InternalPID(), a.self.InternalPID())
 	if err != nil {
 		return fmt.Errorf("failed to demonitor: %w", err)
 	}
 	// remove the child from our monitored actors list
-	a.relationManager.RemoveMonitored(pid.intlPID)
+	a.relationManager.RemoveMonitored(pid.InternalPID())
 	return nil
 }
 
-func (a *Actor) systemMessageHandler(sysMsg interface{}) (passToUser bool) {
+func (a *Actor) shutdown() {
+	a.ctxCancel()
+}
+
+func (a *Actor) Context() context.Context {
+	return a.ctx
+}
+
+func (a *Actor) systemMessageHandler(sysMsg interface{}) (loop bool) {
 	switch msg := sysMsg.(type) {
-	case NormalExit:
+	case sysmsg.NormalExit:
 		// some actor (linked or monitored) has exited with normal reason.
-		relationType := a.relationManager.RelationType(msg.MsgFrom())
+		relationType := a.relationManager.RelationType(msg.Sender())
 		if relationType == relations.MonitoredRelation || relationType == relations.LinkedRelation {
 			// some child actor has exited normally. we should pass this message to the user.
-			return true
+			return a.msgHandler(sysMsg)
 		}
-		return false
-	case AbnormalExit:
+		break
+	case sysmsg.AbnormalExit:
 		// some actor (linked or monitored) has exited with an abnormal reason.
-		relationType := a.relationManager.RelationType(msg.MsgFrom())
+		relationType := a.relationManager.RelationType(msg.Sender())
 		trapExit := atomic.LoadInt32(&a.trapExit)
 		if relationType == relations.MonitoredRelation || (relationType == relations.LinkedRelation && trapExit == trapExitYes) {
 			// if the message is from a monitored actor, or it's from a linked one but the current actor
 			// is trapping exit messages, then we just need to pass the exit message to the user handler.
-			return true
+			return a.msgHandler(sysMsg)
 		} else if relationType == relations.LinkedRelation && trapExit == trapExitNo {
 			// the terminated actor is linked and we're not trapping exit messages.
 			// so we should panic with the same msg.
 			panic(sysMsg)
 		}
 
-		// if the terminated actor is not linked, nor monitored, then we just ignore the system message.
-		return false
+		// if the terminated actor is not linked, nor monitored, then we just ignore the abnormal exit message.
+		break
+	case sysmsg.KillExit:
+		// todo: implement
+		break
+	case sysmsg.ShutdownCMD:
+		// todo: implement
+		break
 	default:
 		log.Printf("actor id: %v, unknown system message type: %v\n", a.Self().ID(), sysMsg)
-		return false
 	}
+	return true
 }
 
 func dispose(a *Actor) {
 	a.mailbox.Dispose()
 
+	var msg sysmsg.SystemMessage
 	switch r := recover().(type) {
-	case AbnormalExit:
+	case sysmsg.AbnormalExit:
 		// the actor has received an exit message and called panic on it.
 		// notifying linked and monitor actors.
-		log.Printf("actor %v received an abnormal exit message from %v, reason: %v\n", a.Self().ID(), r.From.ID(), r.ExitReason())
-		origin := r.MsgFrom()
-		r.From = a.self
-		a.notifyLinkedActors(r, origin)
-		a.notifyMonitorActors(r)
-	case NormalExit:
+		log.Printf("actor %v received an abnormal exit message from %v, reason: %v\n", a.Self().ID(), r.Sender().ID(), r.Reason())
+		msg = sysmsg.NewAbnormalExitMsg(
+			a.self.InternalPID(),
+			"exiting by receiving an abnormal message",
+			&r)
+	case sysmsg.NormalExit:
 		// panic(NormalExit) has been called. so we just notify linked and monitor actors with a normal message.
-		origin := r.MsgFrom()
-		r.From = a.self
-		a.notifyLinkedActors(r, origin)
-		a.notifyMonitorActors(r)
+		msg = sysmsg.NewNormalExitMsg(a.self.InternalPID(), &r)
+	case sysmsg.KillExit:
+		msg = sysmsg.NewKillMessage(a.self.InternalPID(), "exiting by receiving a kill message", &r)
+	case sysmsg.ShutdownCMD:
+		msg = sysmsg.NewShutdownCMD(a.self.InternalPID(), "exiting by receiving a shutdown command", &r)
 	default:
 		if r != nil {
-			// something has gone wrong. notify with an AbnormalExit message.
+			// something has went wrong. notify with an AbnormalExit message.
 			log.Printf("dispose: actor %v had a panic, reason: %v\n", a.Self().ID(), r)
-			abnormal := AbnormalExit{
-				From:   a.self,
-				Reason: r,
-			}
-			// TODO: if this activity is a supervisor, then it hasn't had the chance to shutdown its children so we should do it now.
-			a.notifyLinkedActors(abnormal, a.self)
-			a.notifyMonitorActors(abnormal)
-			return
+			msg = sysmsg.NewAbnormalExitMsg(a.self.InternalPID(), r, nil)
+		} else {
+			// it's just a normal exit
+			msg = sysmsg.NewNormalExitMsg(a.self.InternalPID(), nil)
 		}
-		// it's just a normal exit
-		normal := NormalExit{From: a.self}
-		a.notifyLinkedActors(normal, a.self)
-		a.notifyMonitorActors(normal)
+	}
+	a.notifyRelatedActors(msg)
+}
+
+func (a *Actor) notifyRelatedActors(msg sysmsg.SystemMessage) {
+	linkedIterator := a.relationManager.LinkedActors()
+	for linkedIterator.HasNext() {
+		a.notify(linkedIterator.Value(), msg)
+	}
+	monitorIterator := a.relationManager.MonitorActors()
+	for monitorIterator.HasNext() {
+		a.notify(monitorIterator.Value(), msg)
 	}
 }
 
-func (a *Actor) notifyLinkedActors(msg ExitMessage, origin p.InternalPID) {
-	iterator := a.relationManager.LinkedActors()
-	for iterator.HasNext() {
-		pid := iterator.Value()
-		if origin.ID() != pid.ID() {
-			if err := pid.SendSystemMessage(msg); err != nil {
-				log.Printf("notifyLinkedActors: could not deliver exit message to pid: %v, origin: %v, err: %v\n",
-					pid.ID(), msg.MsgFrom().ID(), err)
-			}
-		}
+func (a *Actor) notify(pid intlpid.InternalPID, msg sysmsg.SystemMessage) {
+	if msg.Origin() != nil && msg.Origin().Sender() == pid {
+		return
 	}
-}
-
-func (a *Actor) notifyMonitorActors(msg ExitMessage) {
-	iterator := a.relationManager.MonitorActors()
-	for iterator.HasNext() {
-		pid := iterator.Value()
-		if err := pid.SendSystemMessage(msg); err != nil {
-			log.Printf("notifyMonitorActors: could not deliver exit message to pid: %v, origin: %v, err: %v\n",
-				pid.ID(), msg.MsgFrom().ID(), err)
-		}
+	err := intlpid.SendSystemMessage(pid, msg)
+	if err != nil {
+		log.Printf("notifyRelatedActors: could not deliver system message to pid: %v, sender: %v, err: %v\n",
+			pid.ID(), msg.Sender().ID(), err)
 	}
 }
