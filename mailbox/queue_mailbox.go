@@ -14,10 +14,10 @@ type queueMailbox struct {
 	goSchedulerInterval uint16
 }
 
-func NewQueueMailbox(capacity int, sendTimeout time.Duration, schedulerInterval uint16) *queueMailbox {
+func NewQueueMailbox(userMailboxCap, sysMailboxCap int, sendTimeout time.Duration, schedulerInterval uint16) *queueMailbox {
 	return &queueMailbox{
-		userMsgQueue:        queue.NewRingBuffer(uint64(capacity)),
-		sysMsgQueue:         queue.NewRingBuffer(DefaultSysMailboxCap),
+		userMsgQueue:        queue.NewRingBuffer(uint64(userMailboxCap)),
+		sysMsgQueue:         queue.NewRingBuffer(uint64(sysMailboxCap)),
 		sendTimeout:         sendTimeout,
 		goSchedulerInterval: schedulerInterval,
 	}
@@ -42,11 +42,9 @@ func (m *queueMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sys
 				log.Println("receive: mailbox has been disposed, %w", err)
 				return
 			}
-			if sysMsgHandler(sysMsg) {
-				// pass the msg to the user
-				if !msgHandler(sysMsg) {
-					return
-				}
+			if !sysMsgHandler(sysMsg) {
+				// stop looping through the mailbox
+				return
 			}
 			if timeout > 0 {
 				// we just processed a message so reset the start time
@@ -63,6 +61,7 @@ func (m *queueMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sys
 				return
 			}
 			if !msgHandler(msg) {
+				// stop looping through the mailbox
 				return
 			}
 

@@ -26,14 +26,13 @@ func (m *chanMailbox) Receive(msgHandler, sysMsgHandler func(interface{}) bool) 
 	for {
 		select {
 		case sysMsg := <-m.sysMsgChan:
-			if sysMsgHandler(sysMsg) {
-				// pass the sysMsg to the user
-				if !msgHandler(sysMsg) {
-					return
-				}
+			if !sysMsgHandler(sysMsg) {
+				// stop looping
+				return
 			}
 		case msg := <-m.userMsgChan:
 			if !msgHandler(msg) {
+				// stop looping
 				return
 			}
 		case <-m.done:
@@ -53,14 +52,13 @@ func (m *chanMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sysM
 	for {
 		select {
 		case sysMsg := <-m.sysMsgChan:
-			if sysMsgHandler(sysMsg) {
-				// pass the sysMsg to the user
-				if !msgHandler(sysMsg) {
-					return
-				}
+			if !sysMsgHandler(sysMsg) {
+				// stop looping
+				return
 			}
 		case msg := <-m.userMsgChan:
 			if !msgHandler(msg) {
+				// stop looping
 				return
 			}
 		case <-m.done:
