@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/hedisam/goactor"
+	p "github.com/hedisam/goactor/pid"
 	"log"
 	"os"
 	"os/signal"
@@ -13,7 +14,7 @@ import (
 const unit = 50 * 10000
 const count = 10 * 1000000
 
-var counterPID *goactor.PID
+var counterPID *p.PID
 
 func main() {
 	aggregatedCounting()

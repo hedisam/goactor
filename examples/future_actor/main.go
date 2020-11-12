@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"github.com/hedisam/goactor"
+	p "github.com/hedisam/goactor/pid"
 	"log"
 	"time"
 )
 
 type Message struct {
 	text   string
-	sender *goactor.PID
+	sender *p.PID
 }
 
 func main() {

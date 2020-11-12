@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"github.com/hedisam/goactor"
 	"github.com/hedisam/goactor/mailbox"
+	p "github.com/hedisam/goactor/pid"
 	"time"
 )
 
-var sender *goactor.PID
+var sender *p.PID
 
 func main() {
 	future := goactor.NewFutureActor()

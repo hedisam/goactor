@@ -3,14 +3,15 @@ package main
 import (
 	"fmt"
 	"github.com/hedisam/goactor"
+	p "github.com/hedisam/goactor/pid"
 )
 
 type ShutdownMsg struct {
-	sender *goactor.PID
+	sender *p.PID
 }
 type PingMsg struct {
 	text   string
-	sender *goactor.PID
+	sender *p.PID
 }
 
 func main() {

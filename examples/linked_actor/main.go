@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/hedisam/goactor"
+	p "github.com/hedisam/goactor/pid"
 	"time"
 )
 
@@ -44,7 +45,7 @@ func multipleLinkedActors() {
 
 func secondActor(actor *goactor.Actor) {
 	actor.Receive(func(msg interface{}) (loop bool) {
-		pid, _ := msg.(*goactor.PID)
+		pid, _ := msg.(*p.PID)
 		_ = actor.Link(pid)
 		return true
 	})
