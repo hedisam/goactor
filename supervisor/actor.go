@@ -4,15 +4,17 @@ import (
 	"fmt"
 	"github.com/hedisam/goactor/internal/intlpid"
 	p "github.com/hedisam/goactor/pid"
+	"github.com/hedisam/goactor/supervisor/models"
+	"log"
 )
 
 type Supervisor struct {
-	relationManager relationManager
-	mailbox         Mailbox
+	relationManager models.RelationManager
+	mailbox         models.Mailbox
 	self            *p.PID
 }
 
-func newSupervisorActor(mailbox Mailbox, self intlpid.InternalPID, manager relationManager) *Supervisor {
+func newSupervisorActor(mailbox models.Mailbox, self intlpid.InternalPID, manager models.RelationManager) *Supervisor {
 	sup := &Supervisor{
 		mailbox:         mailbox,
 		relationManager: manager,
@@ -30,7 +32,7 @@ func (sup *Supervisor) Self() *p.PID {
 }
 
 func (sup *Supervisor) Receive(handler func(message interface{}) (loop bool)) {
-	sup.mailbox.Receive(handler, sup.systemMessageHandler)
+	sup.mailbox.Receive(handler, handler)
 }
 
 func (sup *Supervisor) Link(pid *p.PID) error {
@@ -61,4 +63,9 @@ func (sup *Supervisor) systemMessageHandler(_ interface{}) (loop bool) {
 
 func (sup *Supervisor) dispose() {
 	sup.mailbox.Dispose()
+
+	r := recover()
+	if r != nil {
+		log.Println("[!] supervisor recovered from a panic")
+	}
 }

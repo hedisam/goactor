@@ -6,15 +6,15 @@ import (
 
 const (
 	// if a child process terminates, only that process is restarted
-	OneForOneStrategy Strategy = iota
+	StrategyOptionOneForOne StrategyType = iota
 
 	// if a child process terminates, all other child processes are terminated
 	// and then all of them (including the terminated one) are restarted.
-	OneForAllStrategy
+	StrategyOptionOneForAll
 
 	// if a child process terminates, the terminated child process and
 	// the rest of the specs started after it, are terminated and restarted.
-	RestForOneStrategy
+	StrategyOptionRestForOne
 )
 
 const (
@@ -22,27 +22,27 @@ const (
 	DefaultPeriod      int = 5
 )
 
-type Strategy int32
+type StrategyType int32
 
 type Options struct {
-	Strategy    Strategy
+	Strategy    StrategyType
 	MaxRestarts int
 	Period      int
 }
 
 func OneForOneStrategyOption() Options {
-	return NewOptions(OneForOneStrategy, DefaultMaxRestarts, DefaultPeriod)
+	return NewOptions(StrategyOptionOneForOne, DefaultMaxRestarts, DefaultPeriod)
 }
 
 func OneForAllStrategyOption() Options {
-	return NewOptions(OneForAllStrategy, DefaultMaxRestarts, DefaultPeriod)
+	return NewOptions(StrategyOptionOneForAll, DefaultMaxRestarts, DefaultPeriod)
 }
 
 func RestForOneStrategyOption() Options {
-	return NewOptions(RestForOneStrategy, DefaultMaxRestarts, DefaultPeriod)
+	return NewOptions(StrategyOptionRestForOne, DefaultMaxRestarts, DefaultPeriod)
 }
 
-func NewOptions(strategy Strategy, maxRestarts, period int) Options {
+func NewOptions(strategy StrategyType, maxRestarts, period int) Options {
 	return Options{
 		Strategy:    strategy,
 		MaxRestarts: maxRestarts,

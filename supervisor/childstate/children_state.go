@@ -8,7 +8,14 @@ type ChildrenManager struct {
 	index map[intlpid.InternalPID]string
 }
 
-func (manager *ChildrenManager) Iterator() *childrenStateIterator {
+func NewChildrenManager() *ChildrenManager {
+	return &ChildrenManager{
+		children: make(map[string]*ChildState),
+		index:    make(map[intlpid.InternalPID]string),
+	}
+}
+
+func (manager *ChildrenManager) Iterator() *ChildrenStateIterator {
 	states := make([]*ChildState, 0, len(manager.children))
 	for _, childState := range manager.children {
 		states = append(states, childState)

@@ -40,8 +40,7 @@ func (child *ChildState) Restart() error {
 		child.supService.MaxRestartsReached()
 	}
 
-	// removing the previous internal_pid from the index
-	child.DeclareDead()
+	child.supService.DisposeChild(child)
 
 	err := child.Start()
 	if err != nil {
@@ -76,8 +75,6 @@ func (child *ChildState) Start() error {
 }
 
 // hasReachedMaxRestarts returns true if the child has restarted more than it's allowed in the specified Period of time.
-// note: child's restart count is added by one, that's because of calling this method right before restarting the
-// child. so we're counting the not-yet re-spawned one too.
 func (child *ChildState) hasReachedMaxRestarts() bool {
 	// restarts that are not expired, meaning they are in the same last Period
 	var restartsNotEx []int64
@@ -91,9 +88,8 @@ func (child *ChildState) hasReachedMaxRestarts() bool {
 			restartsNotEx = append(restartsNotEx, restartTime)
 		}
 	}
-	// added by 1. counting the next restart too that's child just gonna happen right
-	// after returning (if this method return false, of course)
-	if len(restartsNotEx)+1 > child.supService.MaxRestartsAllowed() {
+
+	if len(restartsNotEx) >= child.supService.MaxRestartsAllowed() {
 		// we've got restarts more than the allowed MaxRestarts in the same Period
 		return true
 	}
@@ -108,7 +104,7 @@ func (child *ChildState) Shutdown(reason sysmsg.SystemMessage) {
 	intlpid.Shutdown(child.self.InternalPID(), reason)
 }
 
-// DeclareDead removes the child's internal_pid from the child manager index. so if by any chances we got a new message
+// DeclareDead removes the child's internal_pid from the children manager index. so if by any chances we got a new message
 // from the previous dead internal_pid which has been shutdown by the supervisor, we can treat that message as an invalid one
 // and do nothing. that way we show that we're only interested in new internal_pid, or new respawned actors.
 func (child *ChildState) DeclareDead() {

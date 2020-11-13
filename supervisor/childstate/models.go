@@ -7,6 +7,7 @@ type supService interface {
 	RestartsPeriod() int
 	MaxRestartsAllowed() int
 	MaxRestartsReached()
+	DisposeChild(*ChildState)
 }
 
 type Spec interface {

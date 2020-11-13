@@ -6,6 +6,7 @@ import (
 	"github.com/hedisam/goactor/internal/intlpid"
 	"github.com/hedisam/goactor/internal/relations"
 	"github.com/hedisam/goactor/mailbox"
+	"github.com/hedisam/goactor/supervisor/models"
 )
 
 var noShutdown func()
@@ -25,8 +26,8 @@ func Start(options Options, specs ...Spec) (*SupRef, error) {
 	m := mailbox.NewQueueMailbox(1, 100, mailbox.DefaultMailboxTimeout, mailbox.DefaultGoSchedulerInterval)
 	relationManager := relations.NewRelation()
 
-	// we don't provide a shutdown func to a supervisor's internal_pid
-	// so the only way to shutdown a supervisor is by sending a shutdown Command
+	// we don't provide a Shutdown func to a supervisor's internal_pid
+	// so the only way to Shutdown a supervisor is by sending a Shutdown Command
 	pid := intlpid.NewLocalPID(m, relationManager, true, noShutdown)
 
 	supervisor := newSupervisorActor(m, pid, relationManager)
@@ -35,9 +36,9 @@ func Start(options Options, specs ...Spec) (*SupRef, error) {
 	// spawn our new supervisor
 	spawn(supService)
 
-	// sending an init msg so the supervisor starts spawning its childrenManager
+	// sending an Init msg so the supervisor starts spawning its childrenManager
 	future := goactor.NewFutureActor()
-	err = intlpid.SendSystemMessage(future.Self().InternalPID(), initMsg{sender: future.Self().InternalPID()})
+	err = intlpid.SendMessage(supervisor.Self().InternalPID(), models.InitMsg{SenderPID: future.Self().InternalPID()})
 	if err != nil {
 		return nil, fmt.Errorf("could not initialize supervisor: %w", err)
 	}
