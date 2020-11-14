@@ -31,7 +31,15 @@ func (service *SupService) getHandler(message interface{}) (models.SupHandler, s
 	case *sysmsg.ShutdownCMD:
 		// the parent supervisor wants us to Shutdown
 		return handler.NewShutdownCMDHandler(service), update
+	case supRefRequest:
+		update.SetSupervisorService(service)
+		return update, nil
 	default:
 		return handler.NewDefaultHandler(service, message), nil
 	}
+}
+
+type supRefRequest interface {
+	SetSupervisorService(service *SupService)
+	Run(message sysmsg.SystemMessage) bool
 }

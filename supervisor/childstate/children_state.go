@@ -53,3 +53,7 @@ func (manager *ChildrenManager) GetByPID(pid intlpid.InternalPID) (*ChildState, 
 	state, ok := manager.Get(name)
 	return state, ok
 }
+
+func (manager *ChildrenManager) Delete(name string) {
+	delete(manager.children, name)
+}

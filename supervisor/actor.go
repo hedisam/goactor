@@ -64,6 +64,7 @@ func (sup *Supervisor) systemMessageHandler(_ interface{}) (loop bool) {
 func (sup *Supervisor) dispose() {
 	sup.mailbox.Dispose()
 
+	// todo: to be implemented
 	r := recover()
 	if r != nil {
 		log.Println("[!] supervisor recovered from a panic")

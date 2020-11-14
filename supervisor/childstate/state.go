@@ -20,6 +20,14 @@ type ChildState struct {
 	restarts []int64
 }
 
+func (child *ChildState) IsSupervisor() bool {
+	return child.self.IsSupervisor()
+}
+
+func (child *ChildState) Dead() bool {
+	return child.dead
+}
+
 func (child *ChildState) Name() string {
 	return child.spec.Name()
 }
@@ -67,10 +75,10 @@ func (child *ChildState) Start() error {
 
 	// index the internal_pid
 	child.childrenManager.Index(pid.InternalPID(), child.Name())
+	child.dead = false
 
 	// register the child in the process registry by its name
 	goactor.Register(child.Name(), pid)
-	child.dead = false
 	return nil
 }
 
@@ -100,6 +108,9 @@ func (child *ChildState) hasReachedMaxRestarts() bool {
 }
 
 func (child *ChildState) Shutdown(reason sysmsg.SystemMessage) {
+	if child.dead {
+		return
+	}
 	child.DeclareDead()
 	intlpid.Shutdown(child.self.InternalPID(), reason)
 }
@@ -110,6 +121,7 @@ func (child *ChildState) Shutdown(reason sysmsg.SystemMessage) {
 func (child *ChildState) DeclareDead() {
 	// removing ourself from the index. this is like declaring this child actor as dead.
 	child.childrenManager.RemoveIndex(child.self.InternalPID())
+	child.dead = true
 }
 
 func NewChildState(spec Spec, supRef supService, manager *ChildrenManager) *ChildState {

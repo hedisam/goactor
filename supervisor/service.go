@@ -30,7 +30,7 @@ func (service *SupService) Init() error {
 	case StrategyOptionRestForOne:
 		service.strategy = strategy.NewRestForOneStrategyHandler(service)
 	default:
-		return fmt.Errorf("supervisor's service init: invalid strategy type: %v", service.options.Strategy)
+		return fmt.Errorf("couldn't start the supervisor: invalid strategy type: %v", service.options.Strategy)
 	}
 
 	service.childrenManager = childstate.NewChildrenManager()
@@ -50,23 +50,41 @@ func (service *SupService) Strategy() models.StrategyHandler {
 }
 
 func (service *SupService) startChildren() error {
-	for id, spec := range service.specs {
-		// create child's specific state
-		childState := childstate.NewChildState(spec, service, service.childrenManager)
-		// spawn the child for the first time
-		err := childState.Start()
+	for _, spec := range service.specs {
+		err := service.StartChild(spec)
 		if err != nil {
-			return fmt.Errorf("supervisor failed to start the childrenManager: %w", err)
+			return fmt.Errorf("supervisor failed spawning the children: %w", err)
 		}
-
-		// keep tracking of alive actors
-		service.childrenManager.Put(id, childState)
 	}
+	return nil
+}
+
+func (service *SupService) StartChild(spec Spec) error {
+	// check for duplicate ids
+	_, duplicate := service.childrenManager.Get(spec.Name())
+	if duplicate {
+		return fmt.Errorf("another child spec exists with the same name: %s", spec.Name())
+	}
+
+	// create child's specific state
+	child := childstate.NewChildState(spec, service, service.childrenManager)
+	// spawn the child for the first time
+	err := child.Start()
+	if err != nil {
+		return fmt.Errorf("supervisor failed to start the child: %w", err)
+	}
+
+	// keep tracking of alive actors
+	service.childrenManager.Put(child.Name(), child)
 	return nil
 }
 
 func (service *SupService) GetChildByPID(pid intlpid.InternalPID) (*childstate.ChildState, bool) {
 	return service.childrenManager.GetByPID(pid)
+}
+
+func (service *SupService) GetChildByName(name string) (*childstate.ChildState, bool) {
+	return service.childrenManager.Get(name)
 }
 
 func (service *SupService) Link(pid *p.PID) error {
@@ -133,6 +151,17 @@ func (service *SupService) DisposeChild(child *childstate.ChildState) {
 	if err != nil {
 		return
 	}
+}
+
+func (service *SupService) DeleteChild(child *childstate.ChildState) error {
+	if !child.Dead() {
+		return fmt.Errorf("can not delete a running child process: '%s'", child.Name())
+	}
+
+	service.childrenManager.Delete(child.Name())
+	// todo: it's better to provide service.specs to StartLink function when starting a supervisor
+	delete(service.specs, child.Name())
+	return nil
 }
 
 func newSupService(supervisor *Supervisor, specs map[string]Spec, options *Options) *SupService {

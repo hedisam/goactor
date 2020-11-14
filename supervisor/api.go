@@ -11,7 +11,7 @@ import (
 
 var noShutdown func()
 
-func Start(options Options, specs ...Spec) (*SupRef, error) {
+func Start(options Options, specs ...Spec) (*supRef, error) {
 	specsMap, err := specsToMap(specs...)
 	if err != nil {
 		return nil, fmt.Errorf("invalid specs: %w", err)
@@ -64,4 +64,8 @@ func spawn(supService *SupService) {
 		defer sup.dispose()
 		supService.listen(sup)
 	}()
+}
+
+func init() {
+
 }

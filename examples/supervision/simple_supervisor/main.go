@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	_, err := supervisor.Start(
+	ref, err := supervisor.Start(
 		supervisor.OneForOneStrategyOption(),
 		supervisor.NewWorkerSpec("the panicer", supervisor.RestartTransient, toPanic),
 	)
@@ -17,14 +17,26 @@ func main() {
 		log.Fatal(err)
 	}
 
+	info, err := ref.ChildrenCount(2 * time.Second)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(info)
+
 	for {
 		err = goactor.SendNamed("the panicer", "hey you wanna panic?")
 		if err != nil {
 			log.Println(err)
-			return
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+
+	info, err = ref.ChildrenCount(2 * time.Second)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(info)
 }
 
 func toPanic(actor *goactor.Actor) {

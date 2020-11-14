@@ -14,6 +14,10 @@ func newChildrenStateIterator(data []*ChildState) *ChildrenStateIterator {
 	}
 }
 
+func (i *ChildrenStateIterator) Size() int {
+	return i.length
+}
+
 func (i *ChildrenStateIterator) HasNext() bool {
 	return i.length > 0 && i.pos < i.length
 }
