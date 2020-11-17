@@ -1,4 +1,4 @@
-package supervisor
+package option
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ func NewOptions(strategy StrategyType, maxRestarts, period int) Options {
 	}
 }
 
-func (opt *Options) validate() error {
+func (opt *Options) Validate() error {
 	if opt.Strategy < 0 || opt.Strategy > 2 {
 		return fmt.Errorf("invalid supervisor strategy: %d", opt.Strategy)
 	} else if opt.Period < 1 {

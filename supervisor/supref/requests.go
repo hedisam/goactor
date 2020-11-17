@@ -1,8 +1,11 @@
-package supervisor
+package supref
 
 import (
 	"fmt"
 	"github.com/hedisam/goactor/internal/intlpid"
+	"github.com/hedisam/goactor/pid"
+	"github.com/hedisam/goactor/supervisor/childstate"
+	"github.com/hedisam/goactor/supervisor/spec"
 	"github.com/hedisam/goactor/sysmsg"
 	"log"
 )
@@ -11,8 +14,17 @@ type refRequest interface {
 	SetRequester(pid intlpid.InternalPID)
 }
 
+type SupervisorService interface {
+	ChildrenIterator() *childstate.ChildrenStateIterator
+	GetChildByName(name string) (*childstate.ChildState, bool)
+	DeleteChild(child *childstate.ChildState) error
+	StartChild(spec spec.Spec) error
+	ShutdownChild(child *childstate.ChildState, reason sysmsg.SystemMessage) error
+	Self() *pid.PID
+}
+
 type refBaseRequest struct {
-	service *SupService
+	service   SupervisorService
 	requester intlpid.InternalPID
 }
 
@@ -27,8 +39,8 @@ func (req *refBaseRequest) Reply(tag string, resp interface{}) {
 	}
 }
 
-// SetSupervisorService must be called before calling the Run method
-func (req *refBaseRequest) SetSupervisorService(service *SupService) {
+// SetSupervisorService must be called before invoking the Run method
+func (req *refBaseRequest) SetSupervisorService(service SupervisorService) {
 	req.service = service
 }
 
@@ -143,10 +155,10 @@ func (req *RestartChildRequest) Run(_ sysmsg.SystemMessage) bool {
 
 type StartChildRequest struct {
 	*refBaseRequest
-	spec Spec
+	spec spec.Spec
 }
 
-func NewStartChildRequest(spec Spec) *StartChildRequest {
+func NewStartChildRequest(spec spec.Spec) *StartChildRequest {
 	return &StartChildRequest{
 		refBaseRequest: &refBaseRequest{},
 		spec:           spec,
@@ -156,7 +168,7 @@ func NewStartChildRequest(spec Spec) *StartChildRequest {
 func (req *StartChildRequest) Run(_ sysmsg.SystemMessage) bool {
 	tag := "StartChildRequest"
 
-	err := validateSpec(req.spec)
+	err := spec.Validate(req.spec)
 	if err != nil {
 		req.Reply(tag, fmt.Errorf("invalid child spec: %w", err))
 		return true
@@ -198,10 +210,10 @@ func (req *TerminateChildRequest) Run(_ sysmsg.SystemMessage) bool {
 		return true
 	}
 
-	err := req.service.shutdownChild(
+	err := req.service.ShutdownChild(
 		child,
 		sysmsg.NewKillMessage(req.service.Self().InternalPID(), "terminated by user's request", nil),
-		)
+	)
 	if err != nil {
 		req.Reply(tag, fmt.Errorf("failed to terminate the child: %w", err))
 		return true
@@ -210,10 +222,3 @@ func (req *TerminateChildRequest) Run(_ sysmsg.SystemMessage) bool {
 	req.Reply(tag, &OK{})
 	return true
 }
-
-
-
-
-
-
-

@@ -1,22 +1,29 @@
-package supervisor
+package spec
 
 import (
 	"fmt"
 	p "github.com/hedisam/goactor/pid"
+	"github.com/hedisam/goactor/supervisor/option"
 	"strings"
 )
+
+var supStartFunc func(option.Options, ...Spec) (*p.PID, error)
+
+func SetStartLink(sl func(option.Options, ...Spec) (*p.PID, error)) {
+	supStartFunc = sl
+}
 
 type StartLink func() (*p.PID, error)
 
 type Spec interface {
 	StartLink() (*p.PID, error)
-	SupervisorOptions() *Options
+	SupervisorOptions() *option.Options
 	RestartWhen() int
 	Name() string
 	ChildType() ChildType
 }
 
-func specsToMap(specs ...Spec) (map[string]Spec, error) {
+func SpecsToMap(specs ...Spec) (map[string]Spec, error) {
 	if len(specs) == 0 {
 		return nil, fmt.Errorf("specs validator: specs list is empty")
 	}
@@ -24,7 +31,7 @@ func specsToMap(specs ...Spec) (map[string]Spec, error) {
 	specsMap := make(map[string]Spec)
 
 	for _, spec := range specs {
-		if err := validateSpec(spec); err != nil {
+		if err := Validate(spec); err != nil {
 			return nil, err
 		}
 		if _, duplicate := specsMap[spec.Name()]; duplicate {
@@ -36,7 +43,7 @@ func specsToMap(specs ...Spec) (map[string]Spec, error) {
 	return specsMap, nil
 }
 
-func validateSpec(spec Spec) error {
+func Validate(spec Spec) error {
 	if strings.TrimSpace(spec.Name()) == "" {
 		return fmt.Errorf("childspec validator: childspec's id/name could not be empty")
 	} else if spec.RestartWhen() < RestartAlways && spec.RestartWhen() > RestartNever {

@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"github.com/hedisam/goactor"
 	"github.com/hedisam/goactor/supervisor"
+	"github.com/hedisam/goactor/supervisor/option"
+	"github.com/hedisam/goactor/supervisor/spec"
 	"log"
 	"time"
 )
 
 func main() {
 	ref, err := supervisor.Start(
-		supervisor.OneForOneStrategyOption(),
-		supervisor.NewWorkerSpec("the panicer", supervisor.RestartTransient, toPanic),
+		option.OneForOneStrategyOption(),
+		spec.NewWorkerSpec("the panicer", spec.RestartTransient, toPanic),
 	)
 	if err != nil {
 		log.Fatal(err)

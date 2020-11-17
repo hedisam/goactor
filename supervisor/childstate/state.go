@@ -20,26 +20,36 @@ type ChildState struct {
 	restarts []int64
 }
 
+// IsSupervisor returns true if the child process is a supervisor.
+// In that case we'd have a supervision tree.
 func (child *ChildState) IsSupervisor() bool {
 	return child.self.IsSupervisor()
 }
 
+// Dead returns true if this child has been disposed or declared as dead
 func (child *ChildState) Dead() bool {
 	return child.dead
 }
 
+// Name returns the child's name or id
 func (child *ChildState) Name() string {
 	return child.spec.Name()
 }
 
+// RestartWhen returns the restart type specified for this child, which could one of the three values:
+// RestartAlways, RestartTransient, RestartNever
 func (child *ChildState) RestartWhen() int {
 	return child.spec.RestartWhen()
 }
 
+// PID returns the child process's pid. The returned pid could be disposed.
 func (child *ChildState) PID() *p.PID {
 	return child.self
 }
 
+// Restart disposes the old child's pid and re-spawns a new process for the given child spec.
+// The supervisor will panic/shutdown if this child has been restarted more than the allowed max-restarts
+// specified in the supervisor's option.Options
 func (child *ChildState) Restart() error {
 	if child.hasReachedMaxRestarts() {
 		log.Println("[!] supervisor reached max restarts")
@@ -60,8 +70,10 @@ func (child *ChildState) Restart() error {
 	return nil
 }
 
+// Start spawns a new child process for the given child spec, which is will be linked to the supervisor.
+// The child spec can be a worker actor or a supervisor.
 func (child *ChildState) Start() error {
-	// spawn the child
+	// invoke the function that spawns the child process
 	pid, err := child.spec.StartLink()
 	if err != nil {
 		return fmt.Errorf("supervisor failed to Start the child #%s: %w", child.spec.Name(), err)
@@ -82,7 +94,8 @@ func (child *ChildState) Start() error {
 	return nil
 }
 
-// hasReachedMaxRestarts returns true if the child has restarted more than it's allowed in the specified Period of time.
+// hasReachedMaxRestarts returns true if the child has restarted more than max-restarts which is specified in the
+// supervisor's option.Options.
 func (child *ChildState) hasReachedMaxRestarts() bool {
 	// restarts that are not expired, meaning they are in the same last Period
 	var restartsNotEx []int64
@@ -107,6 +120,10 @@ func (child *ChildState) hasReachedMaxRestarts() bool {
 	return false
 }
 
+// Shutdown declares the child as dead and then attempts to shutdown it by triggering the context.Context's cancel func
+// of the child actor.
+// Note: There's no way to directly terminate a goroutine so worker actors that are doing time intensive tasks
+// should pass around and check actor's context.Context to see if it's cancelled or not.
 func (child *ChildState) Shutdown(reason sysmsg.SystemMessage) {
 	if child.dead {
 		return
@@ -115,11 +132,10 @@ func (child *ChildState) Shutdown(reason sysmsg.SystemMessage) {
 	intlpid.Shutdown(child.self.InternalPID(), reason)
 }
 
-// DeclareDead removes the child's internal_pid from the children manager index. so if by any chances we got a new message
-// from the previous dead internal_pid which has been shutdown by the supervisor, we can treat that message as an invalid one
-// and do nothing. that way we show that we're only interested in new internal_pid, or new respawned actors.
+// DeclareDead removes the child's pid from the children manager's index. So if by any chances we got
+// a new message from the previous dead pid which has been shutdown by the supervisor, we can treat that message
+// as an invalid one and do nothing. That way we show that we're only interested in the new pid, or new respawned actor.
 func (child *ChildState) DeclareDead() {
-	// removing ourself from the index. this is like declaring this child actor as dead.
 	child.childrenManager.RemoveIndex(child.self.InternalPID())
 	child.dead = true
 }

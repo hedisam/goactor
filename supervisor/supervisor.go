@@ -6,23 +6,30 @@ import (
 	"github.com/hedisam/goactor/internal/intlpid"
 	"github.com/hedisam/goactor/internal/relations"
 	"github.com/hedisam/goactor/mailbox"
+	p "github.com/hedisam/goactor/pid"
 	"github.com/hedisam/goactor/supervisor/models"
+	"github.com/hedisam/goactor/supervisor/option"
+	"github.com/hedisam/goactor/supervisor/spec"
+	"github.com/hedisam/goactor/supervisor/supref"
 )
 
 var noShutdown func()
 
-func Start(options Options, specs ...Spec) (*supRef, error) {
-	specsMap, err := specsToMap(specs...)
+// Start a new supervisor for the given children specifications. It returns a supervisor reference that can be used
+// to interact with the supervisor.
+// An error is returned if the supervisor's options or any of children specs are invalid.
+func Start(options option.Options, specs ...spec.Spec) (*supref.SupRef, error) {
+	specsMap, err := spec.SpecsToMap(specs...)
 	if err != nil {
 		return nil, fmt.Errorf("invalid specs: %w", err)
 	}
 
-	err = options.validate()
+	err = options.Validate()
 	if err != nil {
-		return nil, fmt.Errorf("invalid options: %w", err)
+		return nil, fmt.Errorf("invalid option: %w", err)
 	}
 
-	// creating supervisor actor
+	// creating a supervisor actor
 	m := mailbox.NewQueueMailbox(1, 100, mailbox.DefaultMailboxTimeout, mailbox.DefaultGoSchedulerInterval)
 	relationManager := relations.NewRelation()
 
@@ -54,7 +61,7 @@ func Start(options Options, specs ...Spec) (*supRef, error) {
 		return nil, fmt.Errorf("supervisor's initialization failed: %w", err)
 	}
 
-	supRef, _ := ToSupervisorRef(supervisor.Self())
+	supRef, _ := supref.ToSupervisorRef(supervisor.Self())
 	return supRef, nil
 }
 
@@ -66,6 +73,18 @@ func spawn(supService *SupService) {
 	}()
 }
 
-func init() {
+// start is assigned to spec.SupervisorSpec's StartLink function to start a new supervisor child process.
+// Basically the goal of this function is to decouple the spec.SupervisorSpec from the Start function when spawning a
+// supervisor child process. So the spec package would not depend on its root package (this package).
+func start(options option.Options, specs ...spec.Spec) (*p.PID, error) {
+	supRef, err := Start(options, specs...)
+	if err != nil {
+		return nil, err
+	}
+	return supRef.PID(), nil
+}
 
+func init() {
+	// here we are assigning the start function
+	spec.SetStartLink(start)
 }

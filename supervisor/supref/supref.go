@@ -1,25 +1,33 @@
-package supervisor
+package supref
 
 import (
 	"fmt"
 	"github.com/hedisam/goactor"
 	"github.com/hedisam/goactor/internal/intlpid"
 	p "github.com/hedisam/goactor/pid"
+	"github.com/hedisam/goactor/supervisor/spec"
 	"time"
 )
 
-type supRef struct {
+type SupRef struct {
 	pid *p.PID
 }
 
-func ToSupervisorRef(pid *p.PID) (*supRef, error) {
+func ToSupervisorRef(pid *p.PID) (*SupRef, error) {
 	if pid.IsSupervisor() {
-		return &supRef{pid: pid}, nil
+		return &SupRef{pid: pid}, nil
 	}
 	return nil, fmt.Errorf("can not convert a worker pid to supervisor reference")
 }
 
-func (ref *supRef) ChildrenCount(timeout time.Duration) (*ChildrenCount, error) {
+// PID returns the supervisor's pid. Note that it can be used by users to send message to the supervisor.
+// To interact with the supervisor, you must use the supervisor's reference SupRef.
+func (ref *SupRef) PID() *p.PID {
+	return ref.pid
+}
+
+// ChildrenCount returns a *ChildrenCount object which denotes the count of all type of supervisor's children.
+func (ref *SupRef) ChildrenCount(timeout time.Duration) (*ChildrenCount, error) {
 	req := NewChildrenCountRequest()
 	resp, err := ref.request(req, timeout)
 	if err != nil {
@@ -32,31 +40,31 @@ func (ref *supRef) ChildrenCount(timeout time.Duration) (*ChildrenCount, error) 
 	return response, nil
 }
 
-func (ref *supRef) DeleteChild(name string, timeout time.Duration) error {
+func (ref *SupRef) DeleteChild(name string, timeout time.Duration) error {
 	req := NewDeleteChildRequest(name)
 	_, err := ref.request(req, timeout)
 	return err
 }
 
-func (ref *supRef) RestartChild(name string, timeout time.Duration) error {
+func (ref *SupRef) RestartChild(name string, timeout time.Duration) error {
 	req := NewRestartChildRequest(name)
 	_, err := ref.request(req, timeout)
 	return err
 }
 
-func (ref *supRef) StartNewChild(spec Spec, timeout time.Duration) error {
+func (ref *SupRef) StartNewChild(spec spec.Spec, timeout time.Duration) error {
 	req := NewStartChildRequest(spec)
 	_, err := ref.request(req, timeout)
 	return err
 }
 
-func (ref *supRef) TerminateChild(name string, timeout time.Duration) error {
+func (ref *SupRef) TerminateChild(name string, timeout time.Duration) error {
 	req := NewTerminateChildRequest(name)
 	_, err := ref.request(req, timeout)
 	return err
 }
 
-func (ref *supRef) request(request refRequest, timeout time.Duration) (resp interface{}, err error) {
+func (ref *SupRef) request(request refRequest, timeout time.Duration) (resp interface{}, err error) {
 	future := goactor.NewFutureActor()
 
 	request.SetRequester(future.Self().InternalPID())

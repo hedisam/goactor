@@ -24,7 +24,7 @@ func Spawn(fn ActorFunc, mailboxBuilder MailboxBuilderFunc) *p.PID {
 
 func Send(pid *p.PID, msg interface{}) error {
 	if pid.IsSupervisor() {
-		return fmt.Errorf("can not send message to a supervisor, use supervisor ref instead")
+		return fmt.Errorf("can not send message to a supervisor, use supervisor supref instead")
 	}
 	err := intlpid.SendMessage(pid.InternalPID(), msg)
 	if err != nil {

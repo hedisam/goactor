@@ -1,9 +1,10 @@
-package supervisor
+package spec
 
 import (
 	"github.com/google/uuid"
 	"github.com/hedisam/goactor"
 	p "github.com/hedisam/goactor/pid"
+	"github.com/hedisam/goactor/supervisor/option"
 	"strings"
 )
 
@@ -19,7 +20,7 @@ func (w WorkerSpec) StartLink() (*p.PID, error) {
 	return pid, nil
 }
 
-func (w WorkerSpec) SupervisorOptions() *Options {
+func (w WorkerSpec) SupervisorOptions() *option.Options {
 	return nil
 }
 

@@ -3,6 +3,7 @@ package supervisor
 import (
 	"github.com/hedisam/goactor/supervisor/handler"
 	"github.com/hedisam/goactor/supervisor/models"
+	"github.com/hedisam/goactor/supervisor/supref"
 	"github.com/hedisam/goactor/sysmsg"
 )
 
@@ -40,6 +41,6 @@ func (service *SupService) getHandler(message interface{}) (models.SupHandler, s
 }
 
 type supRefRequest interface {
-	SetSupervisorService(service *SupService)
+	SetSupervisorService(service supref.SupervisorService)
 	Run(message sysmsg.SystemMessage) bool
 }

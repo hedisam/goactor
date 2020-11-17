@@ -6,6 +6,8 @@ import (
 	p "github.com/hedisam/goactor/pid"
 	"github.com/hedisam/goactor/supervisor/childstate"
 	"github.com/hedisam/goactor/supervisor/models"
+	"github.com/hedisam/goactor/supervisor/option"
+	"github.com/hedisam/goactor/supervisor/spec"
 	"github.com/hedisam/goactor/supervisor/strategy"
 	"github.com/hedisam/goactor/sysmsg"
 	"log"
@@ -14,8 +16,8 @@ import (
 // SupService is responsible for doing all the low level and management stuff of the supervisor
 type SupService struct {
 	supervisor      *Supervisor
-	specs           map[string]Spec
-	options         *Options
+	specs           map[string]spec.Spec
+	options         *option.Options
 	childrenManager *childstate.ChildrenManager
 	strategy        models.StrategyHandler
 }
@@ -23,17 +25,16 @@ type SupService struct {
 func (service *SupService) Init() error {
 	// building the strategy
 	switch service.options.Strategy {
-	case StrategyOptionOneForOne:
+	case option.StrategyOptionOneForOne:
 		service.strategy = strategy.NewOneForOneStrategyHandler()
-	case StrategyOptionOneForAll:
+	case option.StrategyOptionOneForAll:
 		service.strategy = strategy.NewOneForAllStrategyHandler(service)
-	case StrategyOptionRestForOne:
+	case option.StrategyOptionRestForOne:
 		service.strategy = strategy.NewRestForOneStrategyHandler(service)
 	default:
 		return fmt.Errorf("couldn't start the supervisor: invalid strategy type: %v", service.options.Strategy)
 	}
 
-	service.childrenManager = childstate.NewChildrenManager()
 	return service.startChildren()
 }
 
@@ -50,8 +51,8 @@ func (service *SupService) Strategy() models.StrategyHandler {
 }
 
 func (service *SupService) startChildren() error {
-	for _, spec := range service.specs {
-		err := service.StartChild(spec)
+	for _, s := range service.specs {
+		err := service.StartChild(s)
 		if err != nil {
 			return fmt.Errorf("supervisor failed spawning the children: %w", err)
 		}
@@ -59,7 +60,7 @@ func (service *SupService) startChildren() error {
 	return nil
 }
 
-func (service *SupService) StartChild(spec Spec) error {
+func (service *SupService) StartChild(spec spec.Spec) error {
 	// check for duplicate ids
 	_, duplicate := service.childrenManager.Get(spec.Name())
 	if duplicate {
@@ -114,7 +115,7 @@ func (service *SupService) Shutdown(reason sysmsg.SystemMessage) {
 	iterator := service.childrenManager.Iterator()
 	for iterator.HasNext() {
 		childID := iterator.Value()
-		if err := service.shutdownChild(childID, reason); err != nil {
+		if err := service.ShutdownChild(childID, reason); err != nil {
 			log.Printf("[!] Shutdown supervisor: error while shutting down a child #%s, err: %v\n", childID.Name(), err)
 		}
 	}
@@ -128,10 +129,10 @@ func (service *SupService) shutdownChildByName(name string, reason sysmsg.System
 		return fmt.Errorf("failed to Shutdown child #%s: child doesn't exist", child.Name())
 	}
 
-	return service.shutdownChild(child, reason)
+	return service.ShutdownChild(child, reason)
 }
 
-func (service *SupService) shutdownChild(child *childstate.ChildState, reason sysmsg.SystemMessage) error {
+func (service *SupService) ShutdownChild(child *childstate.ChildState, reason sysmsg.SystemMessage) error {
 	// unlink supervisor from the child
 	err := service.supervisor.Unlink(child.PID())
 	if err != nil {
@@ -159,16 +160,16 @@ func (service *SupService) DeleteChild(child *childstate.ChildState) error {
 	}
 
 	service.childrenManager.Delete(child.Name())
-	// todo: it's better to provide service.specs to StartLink function when starting a supervisor
+	// todo: it's better to provide service.specs to start function when starting a supervisor
 	delete(service.specs, child.Name())
 	return nil
 }
 
-func newSupService(supervisor *Supervisor, specs map[string]Spec, options *Options) *SupService {
+func newSupService(supervisor *Supervisor, specs map[string]spec.Spec, options *option.Options) *SupService {
 	return &SupService{
 		supervisor:      supervisor,
 		specs:           specs,
 		options:         options,
-		childrenManager: new(childstate.ChildrenManager),
+		childrenManager: childstate.NewChildrenManager(),
 	}
 }
