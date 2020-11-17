@@ -132,12 +132,15 @@ func (child *ChildState) Shutdown(reason sysmsg.SystemMessage) {
 	intlpid.Shutdown(child.self.InternalPID(), reason)
 }
 
-// DeclareDead removes the child's pid from the children manager's index. So if by any chances we got
-// a new message from the previous dead pid which has been shutdown by the supervisor, we can treat that message
-// as an invalid one and do nothing. That way we show that we're only interested in the new pid, or new respawned actor.
+// DeclareDead removes the child's pid from the children manager's index and unregisters the process from the
+// processes registry.
+// So if by any chances we got a new message from the previous dead pid which has been shutdown by the supervisor,
+// we can treat that message as an invalid one and do nothing.
+// This way we show that we're only interested in the new pid, or new respawned actor.
 func (child *ChildState) DeclareDead() {
 	child.childrenManager.RemoveIndex(child.self.InternalPID())
 	child.dead = true
+	goactor.Unregister(child.Name())
 }
 
 func NewChildState(spec Spec, supRef supService, manager *ChildrenManager) *ChildState {
