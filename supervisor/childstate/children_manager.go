@@ -4,7 +4,7 @@ import "github.com/hedisam/goactor/internal/intlpid"
 
 type ChildrenManager struct {
 	children map[string]*ChildState
-	// index keeps track of alive children by their internal internal_pid
+	// index keeps track of alive children by their intlspec internal_pid
 	index map[intlpid.InternalPID]string
 }
 

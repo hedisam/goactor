@@ -32,10 +32,6 @@ func (w WorkerSpec) Name() string {
 	return w.Id
 }
 
-func (w WorkerSpec) ChildType() ChildType {
-	return ChildWorker
-}
-
 func (w WorkerSpec) SetMailboxBuilder(fn goactor.MailboxBuilderFunc) WorkerSpec {
 	w.mailboxBuilder = fn
 	return w

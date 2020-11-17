@@ -5,7 +5,7 @@ import (
 	"github.com/hedisam/goactor/internal/intlpid"
 	"github.com/hedisam/goactor/pid"
 	"github.com/hedisam/goactor/supervisor/childstate"
-	"github.com/hedisam/goactor/supervisor/spec"
+	"github.com/hedisam/goactor/supervisor/internal/intlspec"
 	"github.com/hedisam/goactor/sysmsg"
 	"log"
 )
@@ -18,7 +18,7 @@ type SupervisorService interface {
 	ChildrenIterator() *childstate.ChildrenStateIterator
 	GetChildByName(name string) (*childstate.ChildState, bool)
 	DeleteChild(child *childstate.ChildState) error
-	StartChild(spec spec.Spec) error
+	StartChild(spec intlspec.Spec) error
 	ShutdownChild(child *childstate.ChildState, reason sysmsg.SystemMessage) error
 	Self() *pid.PID
 }
@@ -155,10 +155,10 @@ func (req *RestartChildRequest) Run(_ sysmsg.SystemMessage) bool {
 
 type StartChildRequest struct {
 	*refBaseRequest
-	spec spec.Spec
+	spec intlspec.Spec
 }
 
-func NewStartChildRequest(spec spec.Spec) *StartChildRequest {
+func NewStartChildRequest(spec intlspec.Spec) *StartChildRequest {
 	return &StartChildRequest{
 		refBaseRequest: &refBaseRequest{},
 		spec:           spec,
@@ -168,7 +168,7 @@ func NewStartChildRequest(spec spec.Spec) *StartChildRequest {
 func (req *StartChildRequest) Run(_ sysmsg.SystemMessage) bool {
 	tag := "StartChildRequest"
 
-	err := spec.Validate(req.spec)
+	err := intlspec.Validate(req.spec)
 	if err != nil {
 		req.Reply(tag, fmt.Errorf("invalid child spec: %w", err))
 		return true

@@ -5,7 +5,7 @@ import (
 	"github.com/hedisam/goactor"
 	"github.com/hedisam/goactor/internal/intlpid"
 	p "github.com/hedisam/goactor/pid"
-	"github.com/hedisam/goactor/supervisor/spec"
+	"github.com/hedisam/goactor/supervisor/internal/intlspec"
 	"time"
 )
 
@@ -52,7 +52,7 @@ func (ref *SupRef) RestartChild(name string, timeout time.Duration) error {
 	return err
 }
 
-func (ref *SupRef) StartNewChild(spec spec.Spec, timeout time.Duration) error {
+func (ref *SupRef) StartNewChild(spec intlspec.Spec, timeout time.Duration) error {
 	req := NewStartChildRequest(spec)
 	_, err := ref.request(req, timeout)
 	return err
@@ -71,7 +71,7 @@ func (ref *SupRef) request(request refRequest, timeout time.Duration) (resp inte
 
 	err = intlpid.SendSystemMessage(ref.pid.InternalPID(), request)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't deliver request to the supervisor: %w'", err)
+		return nil, fmt.Errorf("couldn't deliver request to the supervisor: %w", err)
 	}
 	// waiting for a reply
 	future.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {

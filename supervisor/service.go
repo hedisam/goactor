@@ -5,9 +5,9 @@ import (
 	"github.com/hedisam/goactor/internal/intlpid"
 	p "github.com/hedisam/goactor/pid"
 	"github.com/hedisam/goactor/supervisor/childstate"
+	"github.com/hedisam/goactor/supervisor/internal/intlspec"
 	"github.com/hedisam/goactor/supervisor/models"
 	"github.com/hedisam/goactor/supervisor/option"
-	"github.com/hedisam/goactor/supervisor/spec"
 	"github.com/hedisam/goactor/supervisor/strategy"
 	"github.com/hedisam/goactor/sysmsg"
 	"log"
@@ -16,7 +16,7 @@ import (
 // SupService is responsible for doing all the low level and management stuff of the supervisor
 type SupService struct {
 	supervisor      *Supervisor
-	specs           map[string]spec.Spec
+	specs           map[string]intlspec.Spec
 	options         *option.Options
 	childrenManager *childstate.ChildrenManager
 	strategy        models.StrategyHandler
@@ -60,7 +60,7 @@ func (service *SupService) startChildren() error {
 	return nil
 }
 
-func (service *SupService) StartChild(spec spec.Spec) error {
+func (service *SupService) StartChild(spec intlspec.Spec) error {
 	// check for duplicate ids
 	_, duplicate := service.childrenManager.Get(spec.Name())
 	if duplicate {
@@ -165,7 +165,7 @@ func (service *SupService) DeleteChild(child *childstate.ChildState) error {
 	return nil
 }
 
-func newSupService(supervisor *Supervisor, specs map[string]spec.Spec, options *option.Options) *SupService {
+func newSupService(supervisor *Supervisor, specs map[string]intlspec.Spec, options *option.Options) *SupService {
 	return &SupService{
 		supervisor:      supervisor,
 		specs:           specs,
