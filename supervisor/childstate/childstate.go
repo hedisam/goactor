@@ -2,9 +2,9 @@ package childstate
 
 import (
 	"fmt"
-	"github.com/hedisam/goactor"
 	"github.com/hedisam/goactor/internal/intlpid"
 	p "github.com/hedisam/goactor/pid"
+	"github.com/hedisam/goactor/process"
 	"github.com/hedisam/goactor/sysmsg"
 	"log"
 	"time"
@@ -90,7 +90,7 @@ func (child *ChildState) Start() error {
 	child.dead = false
 
 	// register the child in the process registry by its name
-	goactor.Register(child.Name(), pid)
+	process.Register(child.Name(), pid)
 	return nil
 }
 
@@ -140,7 +140,7 @@ func (child *ChildState) Shutdown(reason sysmsg.SystemMessage) {
 func (child *ChildState) DeclareDead() {
 	child.childrenManager.RemoveIndex(child.self.InternalPID())
 	child.dead = true
-	goactor.Unregister(child.Name())
+	process.Unregister(child.Name())
 }
 
 func NewChildState(spec Spec, supRef supService, manager *ChildrenManager) *ChildState {

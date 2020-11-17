@@ -27,10 +27,5 @@ type relationManager interface {
 	RelationType(pid intlpid.InternalPID) relations.RelationType
 }
 
-type relationIterator interface {
-	HasNext() bool
-	Value() intlpid.InternalPID
-}
-
 type ActorFunc func(actor *Actor)
 type MailboxBuilderFunc func() Mailbox

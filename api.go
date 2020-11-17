@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/hedisam/goactor/internal/intlpid"
 	p "github.com/hedisam/goactor/pid"
+	"github.com/hedisam/goactor/process"
 )
 
 func NewParentActor(mailboxBuilder MailboxBuilderFunc) (*Actor, func(*Actor)) {
@@ -34,7 +35,7 @@ func Send(pid *p.PID, msg interface{}) error {
 }
 
 func SendNamed(name string, msg interface{}) error {
-	pid, ok := WhereIs(name)
+	pid, ok := process.WhereIs(name)
 	if !ok {
 		return fmt.Errorf("actor %s not found", name)
 	}

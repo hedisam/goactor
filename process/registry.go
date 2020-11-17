@@ -1,4 +1,4 @@
-package goactor
+package process
 
 import (
 	"github.com/hedisam/goactor/internal/intlpid"
@@ -21,8 +21,8 @@ func init() {
 
 func Register(name string, pid *p.PID) {
 	reg.Lock()
-	defer reg.Unlock()
 	reg.actors[name] = pid.InternalPID()
+	reg.Unlock()
 }
 
 func Unregister(name string) {

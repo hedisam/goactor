@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/hedisam/goactor"
+	"github.com/hedisam/goactor/process"
 	"log"
 	"time"
 )
@@ -17,7 +18,7 @@ func main() {
 		log.Println(err)
 	}
 
-	goactor.Register("echo", echoPID)
+	process.Register("echo", echoPID)
 
 	err = goactor.SendNamed("echo", "a msg to a named actor named echo")
 	if err != nil {
