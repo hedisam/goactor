@@ -13,8 +13,8 @@ import (
 	"log"
 )
 
-// SupService is responsible for doing all the low level and management stuff of the supervisor
-type SupService struct {
+// Service is responsible for doing all the low level and management stuff of the supervisor.
+type Service struct {
 	supervisor      *Supervisor
 	specs           map[string]intlspec.Spec
 	options         *option.Options
@@ -22,7 +22,7 @@ type SupService struct {
 	strategy        models.StrategyHandler
 }
 
-func (service *SupService) Init() error {
+func (service *Service) Init() error {
 	// building the strategy
 	switch service.options.Strategy {
 	case option.StrategyOptionOneForOne:
@@ -38,19 +38,19 @@ func (service *SupService) Init() error {
 	return service.startChildren()
 }
 
-func (service *SupService) Self() *p.PID {
+func (service *Service) Self() *p.PID {
 	return service.supervisor.Self()
 }
 
-func (service *SupService) ChildrenIterator() *childstate.ChildrenStateIterator {
+func (service *Service) ChildrenIterator() *childstate.ChildrenStateIterator {
 	return service.childrenManager.Iterator()
 }
 
-func (service *SupService) Strategy() models.StrategyHandler {
+func (service *Service) Strategy() models.StrategyHandler {
 	return service.strategy
 }
 
-func (service *SupService) startChildren() error {
+func (service *Service) startChildren() error {
 	for _, s := range service.specs {
 		err := service.StartChild(s)
 		if err != nil {
@@ -60,7 +60,7 @@ func (service *SupService) startChildren() error {
 	return nil
 }
 
-func (service *SupService) StartChild(spec intlspec.Spec) error {
+func (service *Service) StartChild(spec intlspec.Spec) error {
 	// check for duplicate ids
 	_, duplicate := service.childrenManager.Get(spec.Name())
 	if duplicate {
@@ -80,27 +80,27 @@ func (service *SupService) StartChild(spec intlspec.Spec) error {
 	return nil
 }
 
-func (service *SupService) GetChildByPID(pid intlpid.InternalPID) (*childstate.ChildState, bool) {
+func (service *Service) GetChildByPID(pid intlpid.InternalPID) (*childstate.ChildState, bool) {
 	return service.childrenManager.GetByPID(pid)
 }
 
-func (service *SupService) GetChildByName(name string) (*childstate.ChildState, bool) {
+func (service *Service) GetChildByName(name string) (*childstate.ChildState, bool) {
 	return service.childrenManager.Get(name)
 }
 
-func (service *SupService) Link(pid *p.PID) error {
+func (service *Service) Link(pid *p.PID) error {
 	return service.supervisor.Link(pid)
 }
 
-func (service *SupService) RestartsPeriod() int {
+func (service *Service) RestartsPeriod() int {
 	return service.options.Period
 }
 
-func (service *SupService) MaxRestartsAllowed() int {
+func (service *Service) MaxRestartsAllowed() int {
 	return service.options.MaxRestarts
 }
 
-func (service *SupService) MaxRestartsReached() {
+func (service *Service) MaxRestartsReached() {
 	// shutting down this supervisor because a child reached its max allowed restarts in a specified period
 	service.Shutdown(sysmsg.NewKillMessage(
 		service.supervisor.Self().InternalPID(),
@@ -109,21 +109,24 @@ func (service *SupService) MaxRestartsReached() {
 	)
 }
 
-// Shutdown will unlink and shutdown each child and then panics
-func (service *SupService) Shutdown(reason sysmsg.SystemMessage) {
-	// iterating through all children
+// ShutdownChildren iterates through all the children and shuts them down
+func (service *Service) ShutdownChildren(reason sysmsg.SystemMessage) {
 	iterator := service.childrenManager.Iterator()
 	for iterator.HasNext() {
 		childID := iterator.Value()
 		if err := service.ShutdownChild(childID, reason); err != nil {
-			log.Printf("[!] Shutdown supervisor: error while shutting down a child #%s, err: %v\n", childID.Name(), err)
+			log.Printf("[!] supervisor: ShutdownChildren: error while shutting down a child #%s, err: %v\n", childID.Name(), err)
 		}
 	}
+}
 
+// Shutdown will unlink and shutdown each child and then panics
+func (service *Service) Shutdown(reason sysmsg.SystemMessage) {
+	service.ShutdownChildren(reason)
 	panic(reason)
 }
 
-func (service *SupService) shutdownChildByName(name string, reason sysmsg.SystemMessage) error {
+func (service *Service) shutdownChildByName(name string, reason sysmsg.SystemMessage) error {
 	child, ok := service.childrenManager.Get(name)
 	if !ok {
 		return fmt.Errorf("failed to Shutdown child #%s: child doesn't exist", child.Name())
@@ -132,7 +135,7 @@ func (service *SupService) shutdownChildByName(name string, reason sysmsg.System
 	return service.ShutdownChild(child, reason)
 }
 
-func (service *SupService) ShutdownChild(child *childstate.ChildState, reason sysmsg.SystemMessage) error {
+func (service *Service) ShutdownChild(child *childstate.ChildState, reason sysmsg.SystemMessage) error {
 	// unlink supervisor from the child
 	err := service.supervisor.Unlink(child.PID())
 	if err != nil {
@@ -144,7 +147,7 @@ func (service *SupService) ShutdownChild(child *childstate.ChildState, reason sy
 }
 
 // DisposeChild unlink the child and declares its internal_pid as a dead one.
-func (service *SupService) DisposeChild(child *childstate.ChildState) {
+func (service *Service) DisposeChild(child *childstate.ChildState) {
 	// this will remove the child from children manager's index
 	child.DeclareDead()
 
@@ -154,7 +157,7 @@ func (service *SupService) DisposeChild(child *childstate.ChildState) {
 	}
 }
 
-func (service *SupService) DeleteChild(child *childstate.ChildState) error {
+func (service *Service) DeleteChild(child *childstate.ChildState) error {
 	if !child.Dead() {
 		return fmt.Errorf("can not delete a running child process: '%s'", child.Name())
 	}
@@ -165,8 +168,8 @@ func (service *SupService) DeleteChild(child *childstate.ChildState) error {
 	return nil
 }
 
-func newSupService(supervisor *Supervisor, specs map[string]intlspec.Spec, options *option.Options) *SupService {
-	return &SupService{
+func newService(supervisor *Supervisor, specs map[string]intlspec.Spec, options *option.Options) *Service {
+	return &Service{
 		supervisor:      supervisor,
 		specs:           specs,
 		options:         options,

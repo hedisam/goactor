@@ -7,29 +7,29 @@ import (
 	"github.com/hedisam/goactor/sysmsg"
 )
 
-func (service *SupService) listen(supervisor *Supervisor) {
+func listen(actor *Supervisor, service *Service) {
 
-	supervisor.Receive(func(message interface{}) (loop bool) {
-		supHandler, update := service.getHandler(message)
+	actor.Receive(func(message interface{}) (loop bool) {
+		supHandler, update := getHandler(service, message)
 		return supHandler.Run(update)
 	})
 }
 
-func (service *SupService) getHandler(message interface{}) (models.SupHandler, sysmsg.SystemMessage) {
+func getHandler(service *Service, message interface{}) (models.SupHandler, sysmsg.SystemMessage) {
 	switch update := message.(type) {
 	case models.InitMsg:
 		// spawn the supervisor's childrenManager
 		return handler.NewInitHandler(service), &update
-	case *sysmsg.NormalExit:
+	case sysmsg.NormalExit:
 		// some child actor has terminated normally.
 		return handler.GetNormalExitHandler(service), update
-	case *sysmsg.AbnormalExit:
+	case sysmsg.AbnormalExit:
 		// some child actor has exited abnormally.
 		return handler.GetAbnormalHandler(service), update
-	case *sysmsg.KillExit:
+	case sysmsg.KillExit:
 		// some child actor(supervisor) has killed its process.
 		return handler.GetKillExitHandler(service), update
-	case *sysmsg.ShutdownCMD:
+	case sysmsg.ShutdownCMD:
 		// the parent supervisor wants us to Shutdown
 		return handler.NewShutdownCMDHandler(service), update
 	case supRefRequest:

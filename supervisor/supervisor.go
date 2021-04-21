@@ -39,7 +39,7 @@ func Start(options option.Options, specs ...intlspec.Spec) (*supref.SupRef, erro
 
 	supervisor := newSupervisorActor(m, pid, relationManager)
 
-	supService := newSupService(supervisor, specsMap, &options)
+	supService := newService(supervisor, specsMap, &options)
 	// spawn our new supervisor
 	spawn(supService)
 
@@ -65,11 +65,11 @@ func Start(options option.Options, specs ...intlspec.Spec) (*supref.SupRef, erro
 	return supRef, nil
 }
 
-func spawn(supService *SupService) {
+func spawn(service *Service) {
 	go func() {
-		sup := supService.supervisor
-		defer sup.dispose()
-		supService.listen(sup)
+		sup := service.supervisor
+		defer sup.dispose(service)
+		listen(sup, service)
 	}()
 }
 

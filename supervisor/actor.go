@@ -62,10 +62,8 @@ func (sup *Supervisor) systemMessageHandler(_ interface{}) (loop bool) {
 	return true
 }
 
-func (sup *Supervisor) dispose() {
+func (sup *Supervisor) dispose(service *Service) {
 	sup.mailbox.Dispose()
-
-	// todo: explicitly shutdown the children in case of uncontrolled abnormal exit (we need to access to the supervisor's service)
 
 	var msg sysmsg.SystemMessage
 	switch r := recover().(type) {
@@ -82,6 +80,10 @@ func (sup *Supervisor) dispose() {
 			// something abnormal has happened.
 			log.Printf("[----] supervisor dispose: %v had a panic, reason: %v\n", sup.self.ID(), r)
 			msg = sysmsg.NewAbnormalExitMsg(sup.self.InternalPID(), r, nil)
+			// the supervisor hasn't had the chance to shutdown its children, so we explicitly do this.
+			// shutting down the children makes them unlinked, too. Therefore, those related actors who remain linked
+			// would be non-child actors for the supervisor which will get notified about the supervisor's exit.
+			service.ShutdownChildren(msg)
 		} else {
 			// it's just a normal exit
 			msg = sysmsg.NewNormalExitMsg(sup.self.InternalPID(), nil)
