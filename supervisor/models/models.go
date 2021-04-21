@@ -2,6 +2,7 @@ package models
 
 import (
 	"github.com/hedisam/goactor/internal/intlpid"
+	"github.com/hedisam/goactor/internal/relations"
 	"github.com/hedisam/goactor/supervisor/childstate"
 	"github.com/hedisam/goactor/sysmsg"
 )
@@ -9,6 +10,9 @@ import (
 type RelationManager interface {
 	AddLink(pid intlpid.InternalPID)
 	RemoveLink(pid intlpid.InternalPID)
+
+	LinkedActors() *relations.RelationIterator
+	MonitorActors() *relations.RelationIterator
 }
 
 type Mailbox interface {

@@ -5,6 +5,7 @@ import (
 	"github.com/hedisam/goactor/internal/intlpid"
 	p "github.com/hedisam/goactor/pid"
 	"github.com/hedisam/goactor/supervisor/models"
+	"github.com/hedisam/goactor/sysmsg"
 	"log"
 )
 
@@ -64,9 +65,50 @@ func (sup *Supervisor) systemMessageHandler(_ interface{}) (loop bool) {
 func (sup *Supervisor) dispose() {
 	sup.mailbox.Dispose()
 
-	// todo: to be implemented
-	r := recover()
-	if r != nil {
-		log.Println("[!] supervisor recovered from a panic")
+	// todo: explicitly shutdown the children in case of uncontrolled abnormal exit (we need to access to the supervisor's service)
+
+	var msg sysmsg.SystemMessage
+	switch r := recover().(type) {
+	case sysmsg.AbnormalExit:
+		log.Println("[----] supervisor dispose: recovered from an AbnormalExit")
+	case sysmsg.NormalExit:
+		log.Println("[----] supervisor dispose: recovered from a NormalExit")
+	case sysmsg.KillExit:
+		log.Println("[----] supervisor dispose: recovered from a KillExit")
+	case sysmsg.ShutdownCMD:
+		log.Println("[----] supervisor dispose: recovered fro a ShutdownCMD")
+	default:
+		if r != nil {
+			// something abnormal has happened.
+			log.Printf("[----] supervisor dispose: %v had a panic, reason: %v\n", sup.self.ID(), r)
+			msg = sysmsg.NewAbnormalExitMsg(sup.self.InternalPID(), r, nil)
+		} else {
+			// it's just a normal exit
+			msg = sysmsg.NewNormalExitMsg(sup.self.InternalPID(), nil)
+		}
+	}
+
+	sup.notifyRelatedActors(msg)
+}
+
+func (sup *Supervisor) notifyRelatedActors(msg sysmsg.SystemMessage) {
+	linkedIterator := sup.relationManager.LinkedActors()
+	for linkedIterator.HasNext() {
+		sup.notify(linkedIterator.Value(), msg)
+	}
+	monitorIterator := sup.relationManager.MonitorActors()
+	for monitorIterator.HasNext() {
+		sup.notify(monitorIterator.Value(), msg)
+	}
+}
+
+func (sup *Supervisor) notify(pid intlpid.InternalPID, msg sysmsg.SystemMessage) {
+	if msg.Origin() != nil && msg.Origin().Sender() == pid {
+		return
+	}
+	err := intlpid.SendSystemMessage(pid, msg)
+	if err != nil {
+		log.Printf("supervisor: notifyRelatedActors: could not deliver system message to pid: %v, sender: %v, err: %v\n",
+			pid.ID(), msg.Sender().ID(), err)
 	}
 }
