@@ -16,7 +16,7 @@ type RelationManager interface {
 }
 
 type Mailbox interface {
-	Receive(msgHandler, sysMsgHandler func(interface{}) bool)
+	Receive(msgHandler, sysMsgHandler func(interface{}) bool) error
 	Dispose()
 }
 

@@ -7,8 +7,8 @@ import (
 )
 
 type Mailbox interface {
-	Receive(msgHandler, sysMsgHandler func(interface{}) bool)
-	ReceiveWithTimeout(timeout time.Duration, msgHandler, sysMsgHandler func(interface{}) bool)
+	Receive(msgHandler, sysMsgHandler func(interface{}) bool) error
+	ReceiveWithTimeout(timeout time.Duration, msgHandler, sysMsgHandler func(interface{}) bool) error
 	PushMessage(msg interface{}) error
 	PushSystemMessage(msg interface{}) error
 	Dispose()

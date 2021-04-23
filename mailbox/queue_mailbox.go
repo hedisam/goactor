@@ -2,8 +2,8 @@ package mailbox
 
 import (
 	"github.com/Workiva/go-datastructures/queue"
-	"log"
 	"runtime"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,6 +12,7 @@ type queueMailbox struct {
 	sysMsgQueue         *queue.RingBuffer
 	sendTimeout         time.Duration
 	goSchedulerInterval uint16
+	disposed 			uint32
 }
 
 func NewQueueMailbox(userMailboxCap, sysMailboxCap int, sendTimeout time.Duration, schedulerInterval uint16) *queueMailbox {
@@ -23,28 +24,30 @@ func NewQueueMailbox(userMailboxCap, sysMailboxCap int, sendTimeout time.Duratio
 	}
 }
 
-func (m *queueMailbox) Receive(msgHandler, sysMsgHandler func(interface{}) bool) {
-	m.ReceiveWithTimeout(0, msgHandler, sysMsgHandler)
+func (m *queueMailbox) Receive(msgHandler, sysMsgHandler func(interface{}) bool) error {
+	return m.ReceiveWithTimeout(0, msgHandler, sysMsgHandler)
 }
 
-func (m *queueMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sysMsgHandler func(interface{}) bool) {
+func (m *queueMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sysMsgHandler func(interface{}) bool) error {
 	var i uint16
 	var start time.Time
 	if timeout > 0 {
 		start = time.Now()
 	}
 	for {
+		if atomic.LoadUint32(&m.disposed) == 1 {
+			return ErrMailboxClosed
+		}
+
 		// our first priority is system messages
 		if m.sysMsgQueue.Len() > 0 {
 			sysMsg, err := m.sysMsgQueue.Get()
 			if err != nil {
-				// mailbox is disposed.
-				log.Println("receive: mailbox has been disposed, %w", err)
-				return
+				return ErrMailboxClosed
 			}
 			if !sysMsgHandler(sysMsg) {
 				// stop looping through the mailbox
-				return
+				return nil
 			}
 			if timeout > 0 {
 				// we just processed a message so reset the start time
@@ -56,13 +59,11 @@ func (m *queueMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sys
 		if m.userMsgQueue.Len() > 0 {
 			msg, err := m.userMsgQueue.Get()
 			if err != nil {
-				// mailbox is disposed.
-				log.Println("receive: mailbox has been disposed, %w", err)
-				return
+				return ErrMailboxClosed
 			}
 			if !msgHandler(msg) {
 				// stop looping through the mailbox
-				return
+				return nil
 			}
 
 			if timeout > 0 {
@@ -73,7 +74,7 @@ func (m *queueMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sys
 
 		if timeout > 0 && time.Since(start) >= timeout {
 			msgHandler(TimedOut{})
-			return
+			return nil
 		}
 
 		// allowing other goroutines to run
@@ -118,6 +119,7 @@ func (m *queueMailbox) push(queue *queue.RingBuffer, msg interface{}) error {
 }
 
 func (m *queueMailbox) Dispose() {
+	atomic.StoreUint32(&m.disposed, 1)
 	m.sysMsgQueue.Dispose()
 	m.userMsgQueue.Dispose()
 }
