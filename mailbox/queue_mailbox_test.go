@@ -24,13 +24,13 @@ func TestQueueMailbox_Receive(t *testing.T) {
 
 		received := make([]int, length)
 		i := 0
-		m.Receive(func(msg interface{}) bool {
+		err := m.Receive(func(msg interface{}) bool {
 			received[i] = msg.(int)
 			i++
 			if i == length {return false}
 			return true
 		}, nil)
-
+		if !assert.Nil(t, err) {return}
 		assert.EqualValues(t, messages, received)
 	})
 
@@ -42,13 +42,13 @@ func TestQueueMailbox_Receive(t *testing.T) {
 
 		received := make([]int, length)
 		i := 0
-		m.Receive(nil, func(msg interface{}) bool {
+		err := m.Receive(nil, func(msg interface{}) bool {
 			received[i] = msg.(int)
 			i++
 			if i == length {return false}
 			return true
 		})
-
+		if !assert.Nil(t, err) {return}
 		assert.EqualValues(t, messages, received)
 	})
 }
@@ -85,4 +85,48 @@ ErrPoint:
 	}
 
 	return
+}
+
+func TestQueueMailbox_Dispose(t *testing.T) {
+	msgHandler := func(msg interface{}) bool {
+		return false
+	}
+
+	t.Run("disposed", func(t *testing.T) {
+		m := NewQueueMailbox(2, 2, 0, DefaultGoSchedulerInterval)
+
+		assert.Equal(t, uint32(0), m.disposed)
+		m.Dispose()
+		assert.Equal(t, uint32(1), m.disposed)
+
+		err := m.Receive(msgHandler, msgHandler)
+		assert.NotNil(t, err)
+		assert.Equal(t, ErrMailboxClosed, err)
+	})
+
+	t.Run("receive user msg on disposed mailbox", func(t *testing.T) {
+		m := NewQueueMailbox(2, 2, 10 * time.Millisecond, DefaultGoSchedulerInterval)
+
+		err := m.PushMessage("Hello dear user")
+		assert.Nil(t, err)
+
+		m.userMsgQueue.Dispose()
+
+		err = m.Receive(msgHandler, msgHandler)
+		if !assert.NotNil(t, err) {return}
+		assert.Equal(t, ErrMailboxClosed, err)
+	})
+
+	t.Run("receive sys msg on disposed mailbox", func(t *testing.T) {
+		m := NewQueueMailbox(2, 2, 10 * time.Millisecond, DefaultGoSchedulerInterval)
+
+		err := m.PushSystemMessage("Hello dear admin")
+		assert.Nil(t, err)
+
+		m.sysMsgQueue.Dispose()
+
+		err = m.Receive(msgHandler, msgHandler)
+		if !assert.NotNil(t, err) {return}
+		assert.Equal(t, ErrMailboxClosed, err)
+	})
 }
