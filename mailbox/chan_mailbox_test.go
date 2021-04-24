@@ -1,16 +1,15 @@
 package mailbox
 
 import (
-	"fmt"
 	"github.com/stretchr/testify/assert"
 	"sync"
 	"testing"
 	"time"
 )
 
-func TestQueueMailbox_Receive(t *testing.T) {
+func TestChanMailbox_Receive(t *testing.T) {
 	var length = 5
-	m := NewQueueMailbox(length, length, 10 * time.Millisecond, DefaultSysMailboxCap)
+	m := NewChanMailbox(length, length, 10 * time.Millisecond)
 
 	messages := make([]int, length)
 	for i := 0; i < length; i++ {
@@ -54,28 +53,17 @@ func TestQueueMailbox_Receive(t *testing.T) {
 	})
 
 	t.Run("receive with timeout", func(t *testing.T) {
-		m := NewQueueMailbox(2, 2, 10 * time.Millisecond, DefaultGoSchedulerInterval)
-
-		wg := sync.WaitGroup{}
-		wg.Add(1)
-		time.AfterFunc(50 * time.Millisecond, func() {
-			defer wg.Done()
-			err := m.PushMessage("Hello with a delay")
-			assert.Nil(t, err)
-		})
+		m := NewChanMailbox(2, 2, 10 * time.Millisecond)
 
 		err := m.ReceiveWithTimeout(20 * time.Millisecond, func(msg interface{}) bool {
 			return false
 		}, nil)
 		assert.NotNil(t, err)
 		assert.Equal(t, ErrMailboxReceiveTimeout, err)
-
-		wg.Wait()
 	})
 
 	t.Run("timeout reset after reading user's new message", func(t *testing.T) {
-		m := NewQueueMailbox(2, 2, 0, DefaultGoSchedulerInterval)
-
+		m := NewChanMailbox(2, 2, 10 * time.Millisecond)
 		wg := sync.WaitGroup{}
 		wg.Add(2)
 
@@ -90,7 +78,7 @@ func TestQueueMailbox_Receive(t *testing.T) {
 		})
 
 		// but the mailbox is obviously going to receive this message so its timeout
-		// checking start-time for will be reset; so both messages should get delivered
+		// checking start-time will be reset; so both messages should get delivered
 		time.AfterFunc(80 * time.Millisecond, func() {
 			defer wg.Done()
 			err := m.PushMessage("Hello with a delay")
@@ -111,8 +99,7 @@ func TestQueueMailbox_Receive(t *testing.T) {
 	})
 
 	t.Run("timeout reset after reading system's new message", func(t *testing.T) {
-		m := NewQueueMailbox(2, 2, 0, DefaultGoSchedulerInterval)
-
+		m := NewChanMailbox(2, 2, 10 * time.Millisecond)
 		wg := sync.WaitGroup{}
 		wg.Add(2)
 
@@ -127,7 +114,7 @@ func TestQueueMailbox_Receive(t *testing.T) {
 		})
 
 		// but the mailbox is obviously going to receive this message so its timeout
-		// checking start-time for will be reset; so both messages should get delivered
+		// checking start-time will be reset; so both messages should get delivered
 		time.AfterFunc(80 * time.Millisecond, func() {
 			defer wg.Done()
 			err := m.PushSystemMessage("Hello with a delay")
@@ -148,80 +135,76 @@ func TestQueueMailbox_Receive(t *testing.T) {
 	})
 }
 
-func TestQueueMailboxPush(t *testing.T) {
-	m := NewQueueMailbox(2, 2, 10 * time.Millisecond, DefaultGoSchedulerInterval)
+func TestChanMailbox_Push(t *testing.T) {
+	testFunc := func(t *testing.T, n int, m *chanMailbox) {
+		var err error
+		for i := 0; i < n; i++ {
+			err = m.PushMessage(i)
+			assert.Nil(t, err)
+			err = m.PushSystemMessage(i)
+			assert.Nil(t, err)
+		}
 
-	var err error
+		err = m.PushMessage(n)
+		if !assert.NotNil(t, err) {return}
+		assert.Equal(t, ErrMailboxEnqueueTimeout, err)
 
-	for i := 0; i < 2; i++ {
-		err = m.PushMessage(fmt.Sprintf("user msg #%d", i))
-		assert.Nil(t, err)
-		err = m.PushSystemMessage(fmt.Sprintf("sys msg #%d", i))
-		assert.Nil(t, err)
+		err = m.PushSystemMessage(n)
+		if !assert.NotNil(t, err) {return}
+		assert.Equal(t, ErrMailboxEnqueueTimeout, err)
 	}
 
-	var expectedError = ErrMailboxEnqueueTimeout
-	var disposed bool
-
-ErrPoint:
-	err = m.PushMessage(fmt.Sprint("user msg #2"))
-	if !assert.NotNil(t, err) {return}
-	assert.Equal(t, expectedError, err)
-
-	err = m.PushSystemMessage(fmt.Sprint("sys msg #2"))
-	if !assert.NotNil(t, err) {return}
-	assert.Equal(t, expectedError, err)
-
-	if !disposed {
-		m.Dispose()
-		disposed = true
-		expectedError = ErrMailboxClosed
-		goto ErrPoint
+	for i := 0; i < 20; i++ {
+		m := NewChanMailbox(i, i, 3 * time.Millisecond)
+		testFunc(t, i, m)
 	}
-
-	return
 }
 
-func TestQueueMailbox_Dispose(t *testing.T) {
+func TestChanMailbox_Dispose(t *testing.T) {
 	msgHandler := func(msg interface{}) bool {
 		return false
 	}
 
-	t.Run("disposed", func(t *testing.T) {
-		m := NewQueueMailbox(2, 2, 0, DefaultGoSchedulerInterval)
+	m := NewChanMailbox(1, 1, 0)
+	m.Dispose()
 
-		assert.Equal(t, uint32(0), m.disposed)
+	t.Run("calling dispose multiple times", func(t *testing.T) {
 		m.Dispose()
-		assert.Equal(t, uint32(1), m.disposed)
+		m.Dispose()
 
+	})
+
+	t.Run("push msg on disposed", func(t *testing.T) {
+		err := m.PushMessage("Hello")
+		if !assert.NotNil(t, err) {return}
+		assert.Equal(t, ErrMailboxClosed, err)
+
+		err = m.PushSystemMessage("Hi")
+		if !assert.NotNil(t, err) {return}
+		assert.Equal(t, ErrMailboxClosed, err)
+	})
+
+	t.Run("receive on disposed mailbox", func(t *testing.T) {
 		err := m.Receive(msgHandler, msgHandler)
-		assert.NotNil(t, err)
+		if !assert.NotNil(t, err) {return}
 		assert.Equal(t, ErrMailboxClosed, err)
-	})
 
-	t.Run("receive user msg on disposed mailbox", func(t *testing.T) {
-		m := NewQueueMailbox(2, 2, 10 * time.Millisecond, DefaultGoSchedulerInterval)
-
-		err := m.PushMessage("Hello dear user")
-		assert.Nil(t, err)
-
-		m.userMsgQueue.Dispose()
-
-		err = m.Receive(msgHandler, msgHandler)
+		err = m.ReceiveWithTimeout(1, msgHandler, msgHandler)
 		if !assert.NotNil(t, err) {return}
 		assert.Equal(t, ErrMailboxClosed, err)
 	})
 
-	t.Run("receive sys msg on disposed mailbox", func(t *testing.T) {
-		m := NewQueueMailbox(2, 2, 10 * time.Millisecond, DefaultGoSchedulerInterval)
+	t.Run("push and receive on disposed mailbox", func(t *testing.T) {
+		m := NewChanMailbox(2, 2, 0)
+		err := m.PushMessage("Hi")
+		if !assert.Nil(t, err) {return}
 
-		err := m.PushSystemMessage("Hello dear admin")
-		assert.Nil(t, err)
+		m.Dispose()
 
-		m.sysMsgQueue.Dispose()
-
-		err = m.Receive(msgHandler, msgHandler)
-		if !assert.NotNil(t, err) {return}
+		err = m.Receive(func(msg interface{}) bool {
+			return false
+		}, nil)
+		if !assert.NotNil(t, err) {return }
 		assert.Equal(t, ErrMailboxClosed, err)
 	})
 }

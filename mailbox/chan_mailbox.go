@@ -20,52 +20,61 @@ func NewChanMailbox(userMailboxCap, sysMailboxCap int, sendTimeout time.Duration
 	}
 }
 
-func (m *chanMailbox) Receive(msgHandler, sysMsgHandler func(interface{}) bool) {
+func (m *chanMailbox) Receive(msgHandler, sysMsgHandler func(interface{}) bool) error {
 	// we could've delegate this to m.ReceiveWithTimeout(0, msgHandler, sysMsgHandler),
-	// but for the sake of efficiency, we wouldn't.
+	// but we won't do that for the sake of efficiency.
 	for {
+		select {
+		case <-m.done:
+			return ErrMailboxClosed
+		default:
+		}
 		select {
 		case sysMsg := <-m.sysMsgChan:
 			if !sysMsgHandler(sysMsg) {
 				// stop looping
-				return
+				return nil
 			}
 		case msg := <-m.userMsgChan:
 			if !msgHandler(msg) {
 				// stop looping
-				return
+				return nil
 			}
 		case <-m.done:
-			return
+			return ErrMailboxClosed
 		}
 	}
 }
 
-func (m *chanMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sysMsgHandler func(interface{}) bool) {
+func (m *chanMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sysMsgHandler func(interface{}) bool) error {
 	if timeout <= 0 {
-		m.Receive(msgHandler, sysMsgHandler)
-		return
+		return m.Receive(msgHandler, sysMsgHandler)
 	}
 	var ticker = time.NewTicker(timeout)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-m.done:
+			return ErrMailboxClosed
+		default:
+		}
+		select {
 		case sysMsg := <-m.sysMsgChan:
 			if !sysMsgHandler(sysMsg) {
 				// stop looping
-				return
+				return nil
 			}
 		case msg := <-m.userMsgChan:
 			if !msgHandler(msg) {
 				// stop looping
-				return
+				return nil
 			}
 		case <-m.done:
-			return
+			return ErrMailboxClosed
 		case <-ticker.C:
-			msgHandler(TimedOut{})
-			return
+			//msgHandler(TimedOut{})
+			return ErrMailboxReceiveTimeout
 		}
 
 		ticker.Reset(timeout)
@@ -98,10 +107,15 @@ func (m *chanMailbox) push(msgChan chan<- interface{}, msg interface{}) error {
 	select {
 	case <-m.done:
 		return ErrMailboxClosed
-	case msgChan <- msg:
-		return nil
-	case <-timeoutChan:
-		return ErrMailboxTimeout
+	default:
+		select {
+		case <-m.done:
+			return ErrMailboxClosed
+		case <-timeoutChan:
+			return ErrMailboxEnqueueTimeout
+		case msgChan <- msg:
+			return nil
+		}
 	}
 }
 

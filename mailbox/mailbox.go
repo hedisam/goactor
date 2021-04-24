@@ -12,13 +12,9 @@ const (
 	DefaultGoSchedulerInterval = 1000
 )
 
-const (
-	mailboxProcessing int32 = iota
-	mailboxIdle
-)
-
-var ErrMailboxClosed = fmt.Errorf("target mailbox is closed")
-var ErrMailboxTimeout = fmt.Errorf("mailbox sendTimeout")
+var ErrMailboxClosed = fmt.Errorf("target mailbox is closed/disposed")
+var ErrMailboxEnqueueTimeout = fmt.Errorf("mailbox send timeout")
+var ErrMailboxReceiveTimeout = fmt.Errorf("mailbox receive timeout")
 
 type TimedOut struct{}
 
