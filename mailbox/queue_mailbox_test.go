@@ -3,6 +3,7 @@ package mailbox
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"sync"
 	"testing"
 	"time"
 )
@@ -51,6 +52,100 @@ func TestQueueMailbox_Receive(t *testing.T) {
 		if !assert.Nil(t, err) {return}
 		assert.EqualValues(t, messages, received)
 	})
+
+	t.Run("receive with timeout", func(t *testing.T) {
+		m := NewQueueMailbox(2, 2, 10 * time.Millisecond, DefaultGoSchedulerInterval)
+
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		time.AfterFunc(50 * time.Millisecond, func() {
+			defer wg.Done()
+			err := m.PushMessage("Hello with a delay")
+			assert.Nil(t, err)
+		})
+
+		err := m.ReceiveWithTimeout(20 * time.Millisecond, func(msg interface{}) bool {
+			return false
+		}, nil)
+		assert.NotNil(t, err)
+		assert.Equal(t, ErrMailboxReceiveTimeout, err)
+
+		wg.Wait()
+	})
+
+	t.Run("timeout reset after reading user's new message", func(t *testing.T) {
+		m := NewQueueMailbox(2, 2, 0, DefaultGoSchedulerInterval)
+
+		wg := sync.WaitGroup{}
+		wg.Add(2)
+
+		timeout := 20 * time.Millisecond
+
+		// this message is supposed to never get delivered because the delay is greater
+		// than the receive timeout
+		time.AfterFunc(25 * time.Millisecond, func() {
+			defer wg.Done()
+			err := m.PushMessage("Hello agian")
+			assert.Nil(t, err)
+		})
+
+		// but the mailbox is obviously going to receive this message so its timeout
+		// checking start-time for will be reset; so both messages should get delivered
+		time.AfterFunc(10 * time.Millisecond, func() {
+			defer wg.Done()
+			err := m.PushMessage("Hello with a delay")
+			assert.Nil(t, err)
+		})
+
+		i := 0
+		err := m.ReceiveWithTimeout(timeout, func(msg interface{}) bool {
+			i++
+			if i == 2 {return false}
+			return true
+		}, nil)
+		// both messages should get delivered so our message handler is going to return
+		// true and exit before the timeout gets triggered.
+		assert.Nil(t, err)
+
+		wg.Wait()
+	})
+
+	t.Run("timeout reset after reading system's new message", func(t *testing.T) {
+		m := NewQueueMailbox(2, 2, 0, DefaultGoSchedulerInterval)
+
+		wg := sync.WaitGroup{}
+		wg.Add(2)
+
+		timeout := 20 * time.Millisecond
+
+		// this message is supposed to never get delivered because the delay is greater
+		// than the receive timeout
+		time.AfterFunc(25 * time.Millisecond, func() {
+			defer wg.Done()
+			err := m.PushSystemMessage("Hello agian")
+			assert.Nil(t, err)
+		})
+
+		// but the mailbox is obviously going to receive this message so its timeout
+		// checking start-time for will be reset; so both messages should get delivered
+		time.AfterFunc(10 * time.Millisecond, func() {
+			defer wg.Done()
+			err := m.PushSystemMessage("Hello with a delay")
+			assert.Nil(t, err)
+		})
+
+		i := 0
+		err := m.ReceiveWithTimeout(timeout, nil, func(msg interface{}) bool {
+			i++
+			if i == 2 {return false}
+			return true
+		})
+		// both messages should get delivered so our message handler is going to return
+		// true and exit before the timeout gets triggered.
+		assert.Nil(t, err)
+
+		wg.Wait()
+	})
 }
 
 func TestQueueMailboxPush(t *testing.T) {
@@ -65,7 +160,7 @@ func TestQueueMailboxPush(t *testing.T) {
 		assert.Nil(t, err)
 	}
 
-	var expectedError = ErrMailboxTimeout
+	var expectedError = ErrMailboxEnqueueTimeout
 	var disposed bool
 
 ErrPoint:
