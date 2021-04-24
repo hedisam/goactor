@@ -73,8 +73,7 @@ func (m *queueMailbox) ReceiveWithTimeout(timeout time.Duration, msgHandler, sys
 		}
 
 		if timeout > 0 && time.Since(start) >= timeout {
-			msgHandler(TimedOut{})
-			return nil
+			return ErrMailboxReceiveTimeout
 		}
 
 		// allowing other goroutines to run
@@ -112,7 +111,7 @@ func (m *queueMailbox) push(queue *queue.RingBuffer, msg interface{}) error {
 			return nil
 		}
 		if m.sendTimeout > 0 && time.Since(start) >= m.sendTimeout {
-			return ErrMailboxTimeout
+			return ErrMailboxEnqueueTimeout
 		}
 		runtime.Gosched()
 	}
