@@ -11,7 +11,7 @@ type FutureActor struct {
 	self    *pid.PID
 }
 
-func setupNewFutureActor(mailbox Mailbox, self intlpid.InternalPID) *FutureActor {
+func newFutureActor(mailbox Mailbox, self intlpid.InternalPID) *FutureActor {
 	return &FutureActor{
 		mailbox: mailbox,
 		self:    pid.ToPID(self),
@@ -22,14 +22,14 @@ func (a *FutureActor) Self() *pid.PID {
 	return a.self
 }
 
-func (a *FutureActor) Receive(handler func(message interface{}) (loop bool)) {
+func (a *FutureActor) Receive(handler func(message interface{}) (loop bool)) error {
 	defer a.dispose()
-	a.mailbox.Receive(handler, a.systemMessageHandler)
+	return a.mailbox.Receive(handler, a.systemMessageHandler)
 }
 
-func (a *FutureActor) ReceiveWithTimeout(timeout time.Duration, handler func(message interface{}) (loop bool)) {
+func (a *FutureActor) ReceiveWithTimeout(timeout time.Duration, handler func(message interface{}) (loop bool)) error {
 	defer a.dispose()
-	a.mailbox.ReceiveWithTimeout(timeout, handler, a.systemMessageHandler)
+	return a.mailbox.ReceiveWithTimeout(timeout, handler, a.systemMessageHandler)
 }
 
 func (a *FutureActor) systemMessageHandler(_ interface{}) (loop bool) {

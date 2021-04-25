@@ -27,7 +27,7 @@ type Actor struct {
 	msgHandler 		func(message interface{}) (loop bool)
 }
 
-func setupNewActor(mailbox Mailbox, manager relationManager) *Actor {
+func newActor(mailbox Mailbox, manager relationManager) *Actor {
 	a := &Actor{
 		mailbox:         mailbox,
 		relationManager: manager,
