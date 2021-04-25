@@ -2,29 +2,19 @@ package intlpid
 
 import (
 	"github.com/google/uuid"
-	"sync"
 )
 
 type MockInternalPID struct {
 	id string
-	sync.RWMutex
+}
+
+func NewMockInternalPID() *MockInternalPID {
+	return &MockInternalPID{
+		id:      uuid.New().String(),
+	}
 }
 
 func (pid *MockInternalPID) ID() string {
-	pid.RLock()
-	if pid.id != "" {
-		id := pid.id
-		pid.RUnlock()
-		return id
-	}
-	pid.RUnlock()
-
-	pid.Lock()
-	defer pid.Unlock()
-
-	if pid.id == "" {
-		pid.id = uuid.New().String()
-	}
 	return pid.id
 }
 
