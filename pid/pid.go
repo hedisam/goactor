@@ -7,6 +7,9 @@ type PID struct {
 }
 
 func ToPID(iPID intlpid.InternalPID) *PID {
+	if iPID == nil {
+		return nil
+	}
 	return &PID{iPID: iPID}
 }
 

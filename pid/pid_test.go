@@ -23,4 +23,6 @@ func TestToPID(t *testing.T) {
 	pid3 := ToPID(internalPID2)
 	assert.NotEqual(t, pid3, pid)
 
+	nilPID := ToPID(nil)
+	assert.Nil(t, nilPID)
 }
