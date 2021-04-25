@@ -88,12 +88,7 @@ func (r *Relations) LinkedActors() *RelationIterator {
 		linkedActors = append(linkedActors, pid)
 	}
 
-	iterator := &RelationIterator{
-		data:   linkedActors,
-		pos:    0,
-		length: len(linkedActors),
-	}
-	return iterator
+	return NewRelationIterator(linkedActors)
 }
 
 func (r *Relations) MonitorActors() *RelationIterator {
@@ -105,10 +100,5 @@ func (r *Relations) MonitorActors() *RelationIterator {
 		monitorActors = append(monitorActors, pid)
 	}
 
-	iterator := &RelationIterator{
-		data:   monitorActors,
-		pos:    0,
-		length: len(monitorActors),
-	}
-	return iterator
+	return NewRelationIterator(monitorActors)
 }
