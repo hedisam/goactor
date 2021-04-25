@@ -53,14 +53,14 @@ func (a *Actor) Self() *p.PID {
 	return a.self
 }
 
-func (a *Actor) Receive(handler func(message interface{}) (loop bool)) {
+func (a *Actor) Receive(handler func(message interface{}) (loop bool)) error {
 	a.msgHandler = handler
-	a.mailbox.Receive(handler, a.systemMessageHandler)
+	return a.mailbox.Receive(handler, a.systemMessageHandler)
 }
 
-func (a *Actor) ReceiveWithTimeout(timeout time.Duration, handler func(message interface{}) (loop bool)) {
+func (a *Actor) ReceiveWithTimeout(timeout time.Duration, handler func(message interface{}) (loop bool)) error {
 	a.msgHandler = handler
-	a.mailbox.ReceiveWithTimeout(timeout, handler, a.systemMessageHandler)
+	return a.mailbox.ReceiveWithTimeout(timeout, handler, a.systemMessageHandler)
 }
 
 func (a *Actor) Link(pid *p.PID) error {
