@@ -8,6 +8,14 @@ type RelationIterator struct {
 	length int
 }
 
+func NewRelationIterator(data []p.InternalPID) *RelationIterator {
+	return &RelationIterator{
+		data:   data,
+		pos:    0,
+		length: len(data),
+	}
+}
+
 func (i *RelationIterator) HasNext() bool {
 	return i.length > 0 && i.pos < i.length
 }
