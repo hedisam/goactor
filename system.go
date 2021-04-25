@@ -51,7 +51,3 @@ var DefaultChanMailbox = func() Mailbox {
 		mailbox.DefaultSysMailboxCap,
 		mailbox.DefaultMailboxTimeout)
 }
-
-var DefaultRingBufferMailbox = func() Mailbox {
-	return mailbox.NewRingBufferMailbox()
-}
