@@ -7,7 +7,7 @@ import (
 )
 
 func getNewMockPID() intlpid.InternalPID {
-	return new(intlpid.MockInternalPID)
+	return intlpid.NewMockInternalPID()
 }
 
 func TestRelations_RelationType(t *testing.T) {
