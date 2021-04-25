@@ -13,10 +13,14 @@ type registry struct {
 
 var reg *registry
 
-func init() {
-	reg = &registry{
+
+func newRegistry() *registry {
+	return &registry{
 		actors: make(map[string]intlpid.InternalPID),
 	}
+}
+func init() {
+	reg = newRegistry()
 }
 
 func Register(name string, pid *p.PID) {
