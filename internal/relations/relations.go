@@ -11,6 +11,7 @@ type RelationMap map[string]p.InternalPID
 const (
 	LinkedRelation RelationType = iota
 	MonitoredRelation
+	MonitorRelation
 	NoRelation
 )
 
@@ -34,8 +35,10 @@ func (r *Relations) RelationType(pid p.InternalPID) RelationType {
 	defer r.RUnlock()
 	if _, ok := r.linkedActors[pid.ID()]; ok {
 		return LinkedRelation
-	} else if _, ok := r.monitoredActors[pid.ID()]; ok {
+	} else if _, ok = r.monitoredActors[pid.ID()]; ok {
 		return MonitoredRelation
+	} else if _, ok = r.monitorActors[pid.ID()]; ok {
+		return MonitorRelation
 	}
 	return NoRelation
 }
