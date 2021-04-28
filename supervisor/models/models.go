@@ -13,6 +13,8 @@ type RelationManager interface {
 
 	LinkedActors() *relations.RelationIterator
 	MonitorActors() *relations.RelationIterator
+
+	Dispose()
 }
 
 type Mailbox interface {

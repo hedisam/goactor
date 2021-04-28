@@ -3,6 +3,7 @@ package relations
 import (
 	p "github.com/hedisam/goactor/internal/intlpid"
 	"sync"
+	"sync/atomic"
 )
 
 type RelationType int32
@@ -20,6 +21,7 @@ type Relations struct {
 	monitorActors   RelationMap
 	monitoredActors RelationMap
 	sync.RWMutex
+	disposed int32
 }
 
 func NewRelation() *Relations {
@@ -28,6 +30,10 @@ func NewRelation() *Relations {
 		monitorActors:   make(RelationMap),
 		monitoredActors: make(RelationMap),
 	}
+}
+
+func (r *Relations) Dispose() {
+	atomic.StoreInt32(&r.disposed, 1)
 }
 
 func (r *Relations) RelationType(pid p.InternalPID) RelationType {
