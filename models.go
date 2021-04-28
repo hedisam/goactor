@@ -25,6 +25,7 @@ type relationManager interface {
 	MonitorActors() *relations.RelationIterator
 
 	RelationType(pid intlpid.InternalPID) relations.RelationType
+	Dispose()
 }
 
 type ActorFunc func(actor *Actor)
