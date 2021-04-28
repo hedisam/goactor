@@ -1,6 +1,7 @@
 package relations
 
 import (
+	"fmt"
 	p "github.com/hedisam/goactor/internal/intlpid"
 	"sync"
 	"sync/atomic"
@@ -49,40 +50,70 @@ func (r *Relations) RelationType(pid p.InternalPID) RelationType {
 	return NoRelation
 }
 
-func (r *Relations) AddLink(to p.InternalPID) {
+func (r *Relations) AddLink(to p.InternalPID) error {
+	if atomic.LoadInt32(&r.disposed) == 1 {
+		return fmt.Errorf("AddLink failed: disposed relation manager")
+	}
 	r.Lock()
 	defer r.Unlock()
+
 	r.linkedActors[to.ID()] = to
+	return nil
 }
 
-func (r *Relations) RemoveLink(from p.InternalPID) {
+func (r *Relations) RemoveLink(from p.InternalPID) error {
+	if atomic.LoadInt32(&r.disposed) == 1 {
+		return fmt.Errorf("RemoveLink failed: disposed relation manager")
+	}
 	r.Lock()
 	defer r.Unlock()
+
 	delete(r.linkedActors, from.ID())
+	return nil
 }
 
-func (r *Relations) AddMonitored(who p.InternalPID) {
+func (r *Relations) AddMonitored(who p.InternalPID) error {
+	if atomic.LoadInt32(&r.disposed) == 1 {
+		return fmt.Errorf("AddMonitored failed: disposed relation manager")
+	}
 	r.Lock()
 	defer r.Unlock()
+
 	r.monitoredActors[who.ID()] = who
+	return nil
 }
 
-func (r *Relations) RemoveMonitored(who p.InternalPID) {
+func (r *Relations) RemoveMonitored(who p.InternalPID) error {
+	if atomic.LoadInt32(&r.disposed) == 1 {
+		return fmt.Errorf("RemoveMonitored failed: disposed relation manager")
+	}
 	r.Lock()
 	defer r.Unlock()
+
 	delete(r.monitoredActors, who.ID())
+	return nil
 }
 
-func (r *Relations) AddMonitor(by p.InternalPID) {
+func (r *Relations) AddMonitor(by p.InternalPID) error {
+	if atomic.LoadInt32(&r.disposed) == 1 {
+		return fmt.Errorf("AddMonitor failed: disposed relation manager")
+	}
 	r.Lock()
 	defer r.Unlock()
+
 	r.monitorActors[by.ID()] = by
+	return nil
 }
 
-func (r *Relations) RemoveMonitor(by p.InternalPID) {
+func (r *Relations) RemoveMonitor(by p.InternalPID) error {
+	if atomic.LoadInt32(&r.disposed) == 1 {
+		return fmt.Errorf("RemoveMonitor failed: disposed relation manager")
+	}
 	r.Lock()
 	defer r.Unlock()
+
 	delete(r.monitorActors, by.ID())
+	return nil
 }
 
 func (r *Relations) LinkedActors() *RelationIterator {

@@ -43,21 +43,17 @@ func (l *LocalPID) sendSystemMessage(msg interface{}) error {
 }
 
 func (l *LocalPID) link(to InternalPID) error {
-	l.relManager.AddLink(to)
-	return nil
+	return l.relManager.AddLink(to)
 }
 
 func (l *LocalPID) unlink(who InternalPID) error {
-	l.relManager.RemoveLink(who)
-	return nil
+	return l.relManager.RemoveLink(who)
 }
 
 func (l *LocalPID) addMonitor(parent InternalPID) error {
-	l.relManager.AddMonitor(parent)
-	return nil
+	return l.relManager.AddMonitor(parent)
 }
 
 func (l *LocalPID) remMonitor(parent InternalPID) error {
-	l.relManager.RemoveMonitor(parent)
-	return nil
+	return l.relManager.RemoveMonitor(parent)
 }

@@ -8,8 +8,8 @@ import (
 )
 
 type RelationManager interface {
-	AddLink(pid intlpid.InternalPID)
-	RemoveLink(pid intlpid.InternalPID)
+	AddLink(pid intlpid.InternalPID) error
+	RemoveLink(pid intlpid.InternalPID) error
 
 	LinkedActors() *relations.RelationIterator
 	MonitorActors() *relations.RelationIterator

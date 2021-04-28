@@ -64,6 +64,7 @@ func (a *Actor) ReceiveWithTimeout(timeout time.Duration, handler func(message i
 }
 
 func (a *Actor) Link(pid *p.PID) error {
+	// todo: first add link the target pid to this actor's linked actor's list, if not failed try it for the target actor.
 	if pid == nil {
 		return ErrLinkNilTargetPID
 	}
@@ -73,7 +74,10 @@ func (a *Actor) Link(pid *p.PID) error {
 		return fmt.Errorf("failed to add this actor to the target's linked actors list: %w", err)
 	}
 	// add the target actor to our linked actors list
-	a.relationManager.AddLink(pid.InternalPID())
+	err = a.relationManager.AddLink(pid.InternalPID())
+	if err != nil {
+		return fmt.Errorf("link failed: %w", err)
+	}
 	return nil
 }
 
@@ -87,7 +91,10 @@ func (a *Actor) Unlink(pid *p.PID) error {
 		return fmt.Errorf("failed to remove this actor from the target's linked actors list: %w", err)
 	}
 	// remove the target actor from our linked actors list
-	a.relationManager.RemoveLink(pid.InternalPID())
+	err = a.relationManager.RemoveLink(pid.InternalPID())
+	if err != nil {
+		return fmt.Errorf("unlink failed: %w", err)
+	}
 	return nil
 }
 
@@ -101,7 +108,10 @@ func (a *Actor) Monitor(pid *p.PID) error {
 		return fmt.Errorf("failed to monitor: %w", err)
 	}
 	// save the child actor as monitored.
-	a.relationManager.AddMonitored(pid.InternalPID())
+	err = a.relationManager.AddMonitored(pid.InternalPID())
+	if err != nil {
+		return fmt.Errorf("monitor failed: %w", err)
+	}
 	return nil
 }
 
@@ -115,7 +125,10 @@ func (a *Actor) Demonitor(pid *p.PID) error {
 		return fmt.Errorf("failed to demonitor: %w", err)
 	}
 	// remove the child from our monitored actors list
-	a.relationManager.RemoveMonitored(pid.InternalPID())
+	err = a.relationManager.RemoveMonitored(pid.InternalPID())
+	if err != nil {
+		return fmt.Errorf("demonitor failed: %w", err)
+	}
 	return nil
 }
 

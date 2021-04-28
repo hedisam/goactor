@@ -15,11 +15,11 @@ type Mailbox interface {
 }
 
 type relationManager interface {
-	AddLink(pid intlpid.InternalPID)
-	RemoveLink(pid intlpid.InternalPID)
+	AddLink(pid intlpid.InternalPID) error
+	RemoveLink(pid intlpid.InternalPID) error
 
-	AddMonitored(pid intlpid.InternalPID)
-	RemoveMonitored(pid intlpid.InternalPID)
+	AddMonitored(pid intlpid.InternalPID) error
+	RemoveMonitored(pid intlpid.InternalPID) error
 
 	LinkedActors() *relations.RelationIterator
 	MonitorActors() *relations.RelationIterator

@@ -20,11 +20,11 @@ type InternalPID interface {
 }
 
 type relationManager interface {
-	AddLink(pid InternalPID)
-	RemoveLink(pid InternalPID)
+	AddLink(pid InternalPID) error
+	RemoveLink(pid InternalPID) error
 
-	AddMonitor(pid InternalPID)
-	RemoveMonitor(pid InternalPID)
+	AddMonitor(pid InternalPID) error
+	RemoveMonitor(pid InternalPID) error
 }
 
 type mailbox interface {
