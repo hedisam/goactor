@@ -64,6 +64,9 @@ func (a *Actor) ReceiveWithTimeout(timeout time.Duration, handler func(message i
 }
 
 func (a *Actor) Link(pid *p.PID) error {
+	if pid == nil {
+		return fmt.Errorf("failed to link: target pid is nil")
+	}
 	// first we need to ask the other actor to link to this actor.
 	err := intlpid.Link(pid.InternalPID(), a.self.InternalPID())
 	if err != nil {
@@ -75,6 +78,9 @@ func (a *Actor) Link(pid *p.PID) error {
 }
 
 func (a *Actor) Unlink(pid *p.PID) error {
+	if pid == nil {
+		return fmt.Errorf("failed to unlink: target pid is nil")
+	}
 	// attempt to remove the link from the other actor
 	err := intlpid.Unlink(pid.InternalPID(), a.self.InternalPID())
 	if err != nil {
@@ -86,6 +92,9 @@ func (a *Actor) Unlink(pid *p.PID) error {
 }
 
 func (a *Actor) Monitor(pid *p.PID) error {
+	if pid == nil {
+		return fmt.Errorf("failed to monitor: target pid is nil")
+	}
 	// ask the child actor to be monitored by this actor.
 	err := intlpid.AddMonitor(pid.InternalPID(), a.self.InternalPID())
 	if err != nil {
@@ -97,6 +106,9 @@ func (a *Actor) Monitor(pid *p.PID) error {
 }
 
 func (a *Actor) Demonitor(pid *p.PID) error {
+	if pid == nil {
+		return fmt.Errorf("failed to demonitor: target pid is nil")
+	}
 	// ask the target actor to be de-monitored.
 	err := intlpid.RemoveMonitor(pid.InternalPID(), a.self.InternalPID())
 	if err != nil {
