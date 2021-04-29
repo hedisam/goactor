@@ -72,7 +72,7 @@ func setupActor(mailboxBuilder MailboxBuilderFunc) (*Actor, *p.PID) {
 
 	actor := newActor(m, relationManager)
 
-	localPID := intlpid.NewLocalPID(m, relationManager, false, actor.ctxCancel)
+	localPID := intlpid.NewLocalPID(m, relationManager, false, actor.shutdown)
 	pid := p.ToPID(localPID)
 	actor.self = pid
 

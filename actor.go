@@ -134,6 +134,8 @@ func (a *Actor) Demonitor(pid *p.PID) error {
 
 func (a *Actor) shutdown() {
 	a.ctxCancel()
+	a.mailbox.Dispose()
+	a.relationManager.Dispose()
 }
 
 func (a *Actor) Context() context.Context {
@@ -179,7 +181,7 @@ func (a *Actor) systemMessageHandler(sysMsg interface{}) (loop bool) {
 }
 
 func dispose(a *Actor) {
-	a.mailbox.Dispose()
+	a.shutdown()
 
 	var msg sysmsg.SystemMessage
 	switch r := recover().(type) {

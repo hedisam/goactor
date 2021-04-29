@@ -3,11 +3,32 @@ package goactor
 import (
 	"github.com/hedisam/goactor/mailbox"
 	p "github.com/hedisam/goactor/pid"
+	"github.com/hedisam/goactor/sysmsg"
 	"github.com/stretchr/testify/assert"
 	"reflect"
 	"testing"
 	"time"
 )
+
+func TestActor_TrapExit(t *testing.T) {
+	actor, _ := getActorForTest(t)
+
+	assert.False(t, actor.TrapExit())
+
+	actor.SetTrapExit(true)
+	assert.True(t, actor.TrapExit())
+
+	actor.SetTrapExit(false)
+	assert.False(t, actor.TrapExit())
+}
+
+func TestActor_Self(t *testing.T) {
+	actor, pid := getActorForTest(t)
+
+	self := actor.Self()
+	assert.NotNil(t, self)
+	assert.Equal(t, pid, self)
+}
 
 func TestActor_Receive(t *testing.T) {
 	actor, pid := setupActor(DefaultChanMailbox)
@@ -287,6 +308,295 @@ func TestActor_MonitorDemonitor(t *testing.T) {
 
 		err = actor1.Demonitor(pid2)
 		assert.NotNil(t, err)
+	})
+}
+
+func TestActor_Context(t *testing.T) {
+	actor, _ := getActorForTest(t)
+
+	ctx := actor.Context()
+	assert.NotNil(t, ctx)
+
+	actor.ctxCancel()
+	canceled := false
+	select {
+	case <-ctx.Done():
+		canceled = true
+	case <-time.After(10 * time.Nanosecond):
+	}
+
+	assert.True(t, canceled)
+}
+
+func TestActor_systemMessageHandlerNormalExit(t *testing.T) {
+	actor, _ := getActorForTest(t)
+	var msgReceived bool
+
+	actor.msgHandler = func(message interface{}) (loop bool) {
+		msgReceived = true
+		return false
+	}
+
+	t.Run("without any relation", func(t *testing.T) {
+		msg := sysmsg.NewNormalExitMsg(nil, nil)
+
+		loop := actor.systemMessageHandler(msg)
+
+		// msg's sender is not linked or monitored by this actor, so the msg should not
+		// get forwarded to the user's msgHandler
+		assert.False(t, msgReceived)
+		// systemMessageHandler return true to signal the mailbox to continue listening
+		assert.True(t, loop)
+	})
+
+	t.Run("msg from linked actor", func(t *testing.T) {
+		_, pid2 := getActorForTest(t)
+		msg := sysmsg.NewNormalExitMsg(pid2.InternalPID(), nil)
+		msgReceived = false
+
+		err := actor.Link(pid2)
+		if !assert.Nil(t, err) {return}
+
+		loop := actor.systemMessageHandler(msg)
+
+		// the msg should get forwarded to the user's msgHandler
+		assert.True(t, msgReceived)
+		// since our msgHandler sets msgReceived to true and then returns false, our
+		// systemMessageHandler should return false, too.
+		assert.False(t, loop)
+	})
+
+	t.Run("msg from a monitored actor", func(t *testing.T) {
+		_, pid2 := getActorForTest(t)
+		msg := sysmsg.NewNormalExitMsg(pid2.InternalPID(), nil)
+		msgReceived = false
+
+		err := actor.Monitor(pid2)
+		if !assert.Nil(t, err) {return}
+
+		loop := actor.systemMessageHandler(msg)
+
+		assert.True(t, msgReceived)
+		assert.False(t, loop)
+	})
+}
+
+func TestActor_systemMessageHandlerAbnormalMessage(t *testing.T) {
+	actor, _ := getActorForTest(t)
+	var msgReceived bool
+
+	actor.msgHandler = func(message interface{}) (loop bool) {
+		msgReceived = true
+		return false
+	}
+
+	t.Run("without any relation", func(t *testing.T) {
+		msg := sysmsg.NewAbnormalExitMsg(nil,nil, nil)
+
+		loop := actor.systemMessageHandler(msg)
+
+		// msg's sender is not linked or monitored by this actor, so the msg should not
+		// get forwarded to the user's msgHandler
+		assert.False(t, msgReceived)
+		// systemMessageHandler return true to signal the mailbox to continue listening
+		assert.True(t, loop)
+	})
+
+	t.Run("sys msg from monitored actor", func(t *testing.T) {
+		_, pid2 := getActorForTest(t)
+		msg := sysmsg.NewAbnormalExitMsg(pid2.InternalPID(), nil, nil)
+		msgReceived = false
+
+		err := actor.Monitor(pid2)
+		if !assert.Nil(t, err) {return}
+
+		loop := actor.systemMessageHandler(msg)
+
+		assert.True(t, msgReceived)
+		assert.False(t, loop)
+	})
+
+	t.Run("sys msg from linked actor & trapping exit messages", func(t *testing.T) {
+		_, pid2 := getActorForTest(t)
+		msg := sysmsg.NewAbnormalExitMsg(pid2.InternalPID(), nil, nil)
+		msgReceived = false
+
+		actor.SetTrapExit(true)
+
+		err := actor.Link(pid2)
+		if !assert.Nil(t, err) {return}
+
+		loop := actor.systemMessageHandler(msg)
+
+		// the message should get forwarded to the user's msgHandler
+		assert.True(t, msgReceived)
+		assert.False(t, loop)
+	})
+
+	t.Run("sys msg from linked actor without trapping exit messages", func(t *testing.T) {
+		_, pid2 := getActorForTest(t)
+		msg := sysmsg.NewAbnormalExitMsg(pid2.InternalPID(), "just testing", nil)
+		msgReceived = false
+
+		actor.SetTrapExit(false)
+
+		err := actor.Link(pid2)
+		if !assert.Nil(t, err) {return}
+
+		// as a reason/message for the panic
+		// trapping exit messages, it should simply just panic with the received message
+		// since our actor is linked to the one sending the abnormal message and also not
+		defer func() {
+			r := recover()
+			assert.NotNil(t, r)
+			assert.Equal(t, msg, r)
+		}()
+
+		_ = actor.systemMessageHandler(msg)
+	})
+}
+
+func TestActor_dispose(t *testing.T) {
+	actor, pid := getActorForTest(t)
+	monitorActor, _ := getActorForTest(t)
+	linkedActor, lPID := getActorForTest(t)
+
+	var timeout = 10 * time.Millisecond
+
+	err := monitorActor.Monitor(pid)
+	if !assert.Nil(t, err) {return}
+	err = actor.Link(lPID)
+	if !assert.Nil(t, err) {return}
+
+	// trapping exit messages so we can check if they have received the corresponding system
+	// message from our actor
+	monitorActor.SetTrapExit(true)
+	linkedActor.SetTrapExit(true)
+
+	t.Run("testing actor's shutdown", func(t *testing.T) {
+		actor, pid := getActorForTest(t)
+
+		dispose(actor)
+
+		// the mailbox should be closed
+		err := Send(pid, "this msg should fail")
+		assert.NotNil(t, err)
+
+		// we should not be able to link nor monitor any other actors
+		_, pid2 := getActorForTest(t)
+		err = actor.Link(pid2)
+		assert.NotNil(t, err)
+
+		// the actor's context should get canceled
+		canceled := false
+		select {
+		case <-actor.Context().Done():
+			canceled = true
+		case <-time.After(10 * time.Millisecond):
+		}
+		assert.True(t, canceled)
+	})
+
+	t.Run("when the actor finishes its work normally", func(t *testing.T) {
+		dispose(actor)
+
+		err = monitorActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
+			assert.NotNil(t, message)
+			assert.IsType(t, sysmsg.NormalExit{}, message)
+			return false
+		})
+		assert.Nil(t, err) // no timeout error, so the monitor actor has received the exit message
+
+		err = linkedActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
+			assert.NotNil(t, message)
+			assert.IsType(t, sysmsg.NormalExit{}, message)
+			return false
+		})
+		assert.Nil(t, err) // no timeout error, so the linked actor has received the exit msg
+	})
+
+	t.Run("exited due to an abnormal exit message", func(t *testing.T) {
+		defer func() {
+			err = monitorActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
+				assert.NotNil(t, message)
+				assert.IsType(t, sysmsg.AbnormalExit{}, message)
+				return false
+			})
+			assert.Nil(t, err)
+
+			err = linkedActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
+				assert.NotNil(t, message)
+				assert.IsType(t, sysmsg.AbnormalExit{}, message)
+				return false
+			})
+			assert.Nil(t, err)
+		}()
+
+		defer dispose(actor)
+		// panic-ing with an AbnormalExit to simulate the situation
+		_, exitMsgSenderPID := getActorForTest(t)
+		panic(sysmsg.NewAbnormalExitMsg(exitMsgSenderPID.InternalPID(), "just testing", nil))
+	})
+
+	t.Run("exited because of receiving a NormalExit msg", func(t *testing.T) {
+		defer func() {
+			err = monitorActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
+				assert.NotNil(t, message)
+				assert.IsType(t, sysmsg.NormalExit{}, message)
+				return false
+			})
+			assert.Nil(t, err)
+
+			err = linkedActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
+				assert.NotNil(t, message)
+				assert.IsType(t, sysmsg.NormalExit{}, message)
+				return false
+			})
+			assert.Nil(t, err)
+		}()
+
+		defer dispose(actor)
+		_, exitMsgSenderPID := getActorForTest(t)
+		panic(sysmsg.NewNormalExitMsg(exitMsgSenderPID.InternalPID(), nil))
+	})
+
+	t.Run("exited because of panic-ing due to an unknown err", func(t *testing.T) {
+		defer func() {
+			err = monitorActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
+				assert.NotNil(t, message)
+				return false
+			})
+			assert.Nil(t, err)
+
+			err = linkedActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
+				assert.NotNil(t, message)
+				return false
+			})
+			assert.Nil(t, err)
+		}()
+
+		defer dispose(actor)
+		panic("unknown situation")
+	})
+
+	t.Run("when exitmsg sender is in the list of notifiable actors", func(t *testing.T) {
+		defer func() {
+			err = monitorActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
+				assert.NotNil(t, message)
+				assert.IsType(t, sysmsg.AbnormalExit{}, message)
+				return false
+			})
+			assert.Nil(t, err)
+
+			err = linkedActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
+				return false
+			})
+			assert.NotNil(t, err)
+			assert.Contains(t, err.Error(), "timeout")
+		}()
+
+		defer dispose(actor)
+		panic(sysmsg.NewAbnormalExitMsg(lPID.InternalPID(), "testing", nil))
 	})
 }
 
