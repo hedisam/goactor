@@ -38,6 +38,10 @@ func (r *Relations) Dispose() {
 }
 
 func (r *Relations) RelationType(pid p.InternalPID) RelationType {
+	if pid == nil {
+		return NoRelation
+	}
+
 	r.RLock()
 	defer r.RUnlock()
 	if _, ok := r.linkedActors[pid.ID()]; ok {
@@ -51,6 +55,9 @@ func (r *Relations) RelationType(pid p.InternalPID) RelationType {
 }
 
 func (r *Relations) AddLink(to p.InternalPID) error {
+	if to == nil {
+		return fmt.Errorf("AddLink failed: nil pid")
+	}
 	if atomic.LoadInt32(&r.disposed) == 1 {
 		return fmt.Errorf("AddLink failed: disposed relation manager")
 	}
@@ -62,6 +69,9 @@ func (r *Relations) AddLink(to p.InternalPID) error {
 }
 
 func (r *Relations) RemoveLink(from p.InternalPID) error {
+	if from == nil {
+		return fmt.Errorf("RemoveLink failed: nil pid")
+	}
 	if atomic.LoadInt32(&r.disposed) == 1 {
 		return fmt.Errorf("RemoveLink failed: disposed relation manager")
 	}
@@ -73,6 +83,9 @@ func (r *Relations) RemoveLink(from p.InternalPID) error {
 }
 
 func (r *Relations) AddMonitored(who p.InternalPID) error {
+	if who == nil {
+		return fmt.Errorf("AddMonitored failed: nil pid")
+	}
 	if atomic.LoadInt32(&r.disposed) == 1 {
 		return fmt.Errorf("AddMonitored failed: disposed relation manager")
 	}
@@ -84,6 +97,9 @@ func (r *Relations) AddMonitored(who p.InternalPID) error {
 }
 
 func (r *Relations) RemoveMonitored(who p.InternalPID) error {
+	if who == nil {
+		return fmt.Errorf("RemoveMonitored failed: nil pid")
+	}
 	if atomic.LoadInt32(&r.disposed) == 1 {
 		return fmt.Errorf("RemoveMonitored failed: disposed relation manager")
 	}
@@ -95,6 +111,9 @@ func (r *Relations) RemoveMonitored(who p.InternalPID) error {
 }
 
 func (r *Relations) AddMonitor(by p.InternalPID) error {
+	if by == nil {
+		return fmt.Errorf("AddMonitor failed: nil pid")
+	}
 	if atomic.LoadInt32(&r.disposed) == 1 {
 		return fmt.Errorf("AddMonitor failed: disposed relation manager")
 	}
@@ -106,6 +125,9 @@ func (r *Relations) AddMonitor(by p.InternalPID) error {
 }
 
 func (r *Relations) RemoveMonitor(by p.InternalPID) error {
+	if by == nil {
+		return fmt.Errorf("RemoveMonitor failed: nil pid")
+	}
 	if atomic.LoadInt32(&r.disposed) == 1 {
 		return fmt.Errorf("RemoveMonitor failed: disposed relation manager")
 	}

@@ -17,8 +17,10 @@ func TestRelations_RelationType(t *testing.T) {
 	monitoredPID := getNewMockPID()
 	noRelationPID := getNewMockPID()
 
-	rm.AddLink(linkedPID)
-	rm.AddMonitored(monitoredPID)
+	err := rm.AddLink(linkedPID)
+	assert.Nil(t, err)
+	err = rm.AddMonitored(monitoredPID)
+	assert.Nil(t, err)
 	// no adding for noRelationPID
 
 	relType := rm.RelationType(linkedPID)
@@ -29,14 +31,35 @@ func TestRelations_RelationType(t *testing.T) {
 
 	relType = rm.RelationType(noRelationPID)
 	assert.Equal(t, NoRelation, relType)
+
+	relType = rm.RelationType(nil)
+	assert.Equal(t, NoRelation, relType)
 }
 
 func TestRelations_AddRemove(t *testing.T) {
 	rm := NewRelation()
 
+	t.Run("nil pid", func(t *testing.T) {
+		err := rm.AddLink(nil)
+		assert.NotNil(t, err)
+		err = rm.RemoveLink(nil)
+		assert.NotNil(t, err)
+
+		err = rm.AddMonitor(nil)
+		assert.NotNil(t, err)
+		err = rm.RemoveMonitor(nil)
+		assert.NotNil(t, err)
+
+		err = rm.AddMonitored(nil)
+		assert.NotNil(t, err)
+		err = rm.RemoveMonitored(nil)
+		assert.NotNil(t, err)
+	})
+
 	t.Run("linked actors", func(t *testing.T) {
 		linkedPID := getNewMockPID()
-		rm.AddLink(linkedPID)
+		err := rm.AddLink(linkedPID)
+		assert.Nil(t, err)
 
 		pid, ok := rm.linkedActors[linkedPID.ID()]
 		if !assert.True(t, ok) {
@@ -44,17 +67,17 @@ func TestRelations_AddRemove(t *testing.T) {
 		}
 		assert.Equal(t, linkedPID, pid)
 
-		rm.RemoveLink(linkedPID)
+		err = rm.RemoveLink(linkedPID)
+		assert.Nil(t, err)
 
 		pid, ok = rm.linkedActors[linkedPID.ID()]
-		if !assert.False(t, ok) {
-			return
-		}
+		assert.False(t, ok)
 	})
 
 	t.Run("monitored actors", func(t *testing.T) {
 		monitoredPID := getNewMockPID()
-		rm.AddMonitored(monitoredPID)
+		err := rm.AddMonitored(monitoredPID)
+		assert.Nil(t, err)
 
 		pid, ok := rm.monitoredActors[monitoredPID.ID()]
 		if !assert.True(t, ok) {
@@ -62,26 +85,47 @@ func TestRelations_AddRemove(t *testing.T) {
 		}
 		assert.Equal(t, monitoredPID, pid)
 
-		rm.RemoveMonitored(monitoredPID)
+		err = rm.RemoveMonitored(monitoredPID)
+		assert.Nil(t, err)
 
 		pid, ok = rm.monitoredActors[monitoredPID.ID()]
-		if !assert.False(t, ok) {
-			return
-		}
+		assert.False(t, ok)
 	})
 
 	t.Run("monitor actors", func(t *testing.T) {
 		monitorPID := getNewMockPID()
-		rm.AddMonitor(monitorPID)
+		err := rm.AddMonitor(monitorPID)
+		assert.Nil(t, err)
 
 		pid, ok := rm.monitorActors[monitorPID.ID()]
 		if !assert.True(t, ok) {return}
 		assert.Equal(t, monitorPID, pid)
 
-		rm.RemoveMonitor(monitorPID)
+		err = rm.RemoveMonitor(monitorPID)
+		assert.Nil(t, err)
 
 		pid, ok = rm.monitorActors[monitorPID.ID()]
-		if !assert.False(t, ok) {return}
+		assert.False(t, ok)
+	})
+
+	t.Run("disposed relation manager", func(t *testing.T) {
+		rm.Dispose()
+		pid := getNewMockPID()
+
+		err := rm.AddLink(pid)
+		assert.NotNil(t, err)
+		err = rm.RemoveLink(pid)
+		assert.NotNil(t, err)
+
+		err = rm.AddMonitor(pid)
+		assert.NotNil(t, err)
+		err = rm.RemoveMonitor(pid)
+		assert.NotNil(t, err)
+
+		err = rm.AddMonitored(pid)
+		assert.NotNil(t, err)
+		err = rm.RemoveMonitored(pid)
+		assert.NotNil(t, err)
 	})
 }
 
@@ -91,7 +135,8 @@ func TestRelations_LinkedActors(t *testing.T) {
 	L := 10
 	for i := 0; i < L; i++ {
 		pid := getNewMockPID()
-		rm.AddLink(pid)
+		err := rm.AddLink(pid)
+		assert.Nil(t, err)
 	}
 
 	iterator := rm.LinkedActors()
@@ -113,7 +158,8 @@ func TestRelations_MonitorActors(t *testing.T) {
 	L := 10
 	for i := 0; i < L; i++ {
 		pid := getNewMockPID()
-		rm.AddMonitor(pid)
+		err := rm.AddMonitor(pid)
+		assert.Nil(t, err)
 	}
 
 	iterator := rm.MonitorActors()
