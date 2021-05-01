@@ -225,3 +225,10 @@ func TestQueueMailbox_Dispose(t *testing.T) {
 		assert.Equal(t, ErrMailboxClosed, err)
 	})
 }
+
+func TestNewQueueMailbox(t *testing.T) {
+	m := NewQueueMailbox(1, 1, 0, DefaultGoSchedulerInterval)
+
+	assert.Equal(t, uint64(2), m.userMsgQueue.Cap())
+	assert.Equal(t, uint64(2), m.sysMsgQueue.Cap())
+}
