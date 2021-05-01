@@ -9,6 +9,7 @@ import (
 type FutureActor struct {
 	mailbox Mailbox
 	self    *pid.PID
+	msgHandler func(message interface{}) (loop bool)
 }
 
 func newFutureActor(mailbox Mailbox, self intlpid.InternalPID) *FutureActor {
@@ -24,16 +25,18 @@ func (a *FutureActor) Self() *pid.PID {
 
 func (a *FutureActor) Receive(handler func(message interface{}) (loop bool)) error {
 	defer a.dispose()
+	a.msgHandler = handler
 	return a.mailbox.Receive(handler, a.systemMessageHandler)
 }
 
 func (a *FutureActor) ReceiveWithTimeout(timeout time.Duration, handler func(message interface{}) (loop bool)) error {
 	defer a.dispose()
+	a.msgHandler = handler
 	return a.mailbox.ReceiveWithTimeout(timeout, handler, a.systemMessageHandler)
 }
 
-func (a *FutureActor) systemMessageHandler(_ interface{}) (loop bool) {
-	return true
+func (a *FutureActor) systemMessageHandler(sysMsg interface{}) (loop bool) {
+	return a.msgHandler(sysMsg)
 }
 
 func (a *FutureActor) dispose() {
