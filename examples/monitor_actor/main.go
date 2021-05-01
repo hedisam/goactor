@@ -8,7 +8,7 @@ import (
 
 func main() {
 	parent, dispose := goactor.NewParentActor(nil)
-	defer dispose(parent)
+	defer dispose()
 
 	abnormalPID := goactor.Spawn(abnormalActor, nil)
 	_ = parent.Monitor(abnormalPID)

@@ -16,7 +16,7 @@ type PingMsg struct {
 
 func main() {
 	parent, dispose := goactor.NewParentActor(nil)
-	defer dispose(parent)
+	defer dispose()
 
 	pingMsg := PingMsg{text: "ping", sender: parent.Self()}
 

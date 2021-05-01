@@ -24,9 +24,9 @@ var DefaultChanMailbox = func() Mailbox {
 		mailbox.DefaultMailboxTimeout)
 }
 
-func NewParentActor(mailboxBuilder MailboxBuilderFunc) (*Actor, func(*Actor)) {
+func NewParentActor(mailboxBuilder MailboxBuilderFunc) (*Actor, func()) {
 	actor, _ := setupActor(mailboxBuilder)
-	return actor, dispose
+	return actor, actor.dispose
 }
 
 func NewFutureActor() *FutureActor {
@@ -88,6 +88,6 @@ func setupFutureActor() *FutureActor {
 }
 
 func spawn(fn ActorFunc, actor *Actor) {
-	defer dispose(actor)
+	defer actor.dispose()
 	fn(actor)
 }

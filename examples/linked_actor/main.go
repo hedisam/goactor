@@ -13,7 +13,7 @@ func main() {
 
 func parentActorLinked() {
 	parent, dispose := goactor.NewParentActor(nil)
-	defer dispose(parent)
+	defer dispose()
 
 	pid := goactor.Spawn(firstActor, nil)
 	_ = parent.Link(pid)

@@ -180,7 +180,7 @@ func (a *Actor) systemMessageHandler(sysMsg interface{}) (loop bool) {
 	return true
 }
 
-func dispose(a *Actor) {
+func (a *Actor) dispose() {
 	a.shutdown()
 
 	var msg sysmsg.SystemMessage

@@ -476,7 +476,7 @@ func TestActor_dispose(t *testing.T) {
 	t.Run("testing actor's shutdown", func(t *testing.T) {
 		actor, pid := getActorForTest(t)
 
-		dispose(actor)
+		actor.dispose()
 
 		// the mailbox should be closed
 		err := Send(pid, "this msg should fail")
@@ -498,7 +498,7 @@ func TestActor_dispose(t *testing.T) {
 	})
 
 	t.Run("when the actor finishes its work normally", func(t *testing.T) {
-		dispose(actor)
+		actor.dispose()
 
 		err = monitorActor.ReceiveWithTimeout(timeout, func(message interface{}) (loop bool) {
 			assert.NotNil(t, message)
@@ -532,7 +532,7 @@ func TestActor_dispose(t *testing.T) {
 			assert.Nil(t, err)
 		}()
 
-		defer dispose(actor)
+		defer actor.dispose()
 		// panic-ing with an AbnormalExit to simulate the situation
 		_, exitMsgSenderPID := getActorForTest(t)
 		panic(sysmsg.NewAbnormalExitMsg(exitMsgSenderPID.InternalPID(), "just testing", nil))
@@ -555,7 +555,7 @@ func TestActor_dispose(t *testing.T) {
 			assert.Nil(t, err)
 		}()
 
-		defer dispose(actor)
+		defer actor.dispose()
 		_, exitMsgSenderPID := getActorForTest(t)
 		panic(sysmsg.NewNormalExitMsg(exitMsgSenderPID.InternalPID(), nil))
 	})
@@ -575,7 +575,7 @@ func TestActor_dispose(t *testing.T) {
 			assert.Nil(t, err)
 		}()
 
-		defer dispose(actor)
+		defer actor.dispose()
 		panic("unknown situation")
 	})
 
@@ -595,7 +595,7 @@ func TestActor_dispose(t *testing.T) {
 			assert.Contains(t, err.Error(), "timeout")
 		}()
 
-		defer dispose(actor)
+		defer actor.dispose()
 		panic(sysmsg.NewAbnormalExitMsg(lPID.InternalPID(), "testing", nil))
 	})
 }
