@@ -81,7 +81,7 @@ func setupActor(mailboxBuilder MailboxBuilderFunc) (*Actor, *p.PID) {
 
 func setupFutureActor() *FutureActor {
 	noShutdown := func() {}
-	m := mailbox.NewQueueMailbox(10, 10, mailbox.DefaultMailboxTimeout, mailbox.DefaultGoSchedulerInterval)
+	m := mailbox.NewQueueMailbox(1, 1, mailbox.DefaultMailboxTimeout, mailbox.DefaultGoSchedulerInterval)
 	localPID := intlpid.NewLocalPID(m, nil, false, noShutdown)
 	featureActor := newFutureActor(m, localPID)
 	return featureActor
