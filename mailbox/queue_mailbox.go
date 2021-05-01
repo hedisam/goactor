@@ -17,11 +17,11 @@ type queueMailbox struct {
 
 func NewQueueMailbox(userMailboxCap, sysMailboxCap int, sendTimeout time.Duration, schedulerInterval uint16) *queueMailbox {
 	// due to a bug in the RingBuffer queue we can not allow sizes of 1
-	if userMailboxCap == 1 {
-		userMailboxCap++
+	if userMailboxCap <= 1 {
+		userMailboxCap = 2
 	}
-	if sysMailboxCap == 1 {
-		sysMailboxCap++
+	if sysMailboxCap <= 1 {
+		sysMailboxCap = 2
 	}
 	return &queueMailbox{
 		userMsgQueue:        queue.NewRingBuffer(uint64(userMailboxCap)),
