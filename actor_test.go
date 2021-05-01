@@ -88,7 +88,7 @@ func TestActor_ReceiveWithTimeout(t *testing.T) {
 	})
 	if !assert.Nil(t, err) {return}
 
-	time.AfterFunc(time.Millisecond * 100, func() {
+	time.AfterFunc(time.Millisecond * 15, func() {
 		err = Send(pid, "Hi with delay")
 		assert.Nil(t, err)
 	})
