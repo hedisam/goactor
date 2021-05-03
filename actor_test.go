@@ -6,6 +6,7 @@ import (
 	"github.com/hedisam/goactor/sysmsg"
 	"github.com/stretchr/testify/assert"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 )
@@ -88,7 +89,10 @@ func TestActor_ReceiveWithTimeout(t *testing.T) {
 	})
 	if !assert.Nil(t, err) {return}
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	time.AfterFunc(time.Millisecond * 15, func() {
+		defer wg.Done()
 		err = Send(pid, "Hi with delay")
 		assert.Nil(t, err)
 	})
@@ -100,6 +104,8 @@ func TestActor_ReceiveWithTimeout(t *testing.T) {
 	if !assert.NotNil(t, err) {return}
 	assert.Equal(t, mailbox.ErrMailboxReceiveTimeout, err)
 
+	wg.Wait()
+
 	actor.mailbox.Dispose()
 
 	err = actor.ReceiveWithTimeout(time.Millisecond * 10, func(message interface{}) (loop bool) {
@@ -108,6 +114,7 @@ func TestActor_ReceiveWithTimeout(t *testing.T) {
 	})
 	if !assert.NotNil(t, err) {return}
 	assert.Equal(t, mailbox.ErrMailboxClosed, err)
+
 }
 
 func TestActor_LinkUnlink(t *testing.T) {

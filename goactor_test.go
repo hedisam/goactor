@@ -174,7 +174,7 @@ func TestSpawn(t *testing.T) {
 		var received []interface{}
 		fnChan := make(chan struct{})
 		fn := func(a *Actor) {
-			_ = a.ReceiveWithTimeout(time.Millisecond*10, func(message interface{}) (loop bool) {
+			_ = a.ReceiveWithTimeout(time.Millisecond*100, func(message interface{}) (loop bool) {
 				received = append(received, message)
 				return true
 			})

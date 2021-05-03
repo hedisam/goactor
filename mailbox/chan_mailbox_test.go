@@ -79,7 +79,7 @@ func TestChanMailbox_Receive(t *testing.T) {
 
 		// but the mailbox is obviously going to receive this message so its timeout
 		// checking start-time will be reset; so both messages should get delivered
-		time.AfterFunc(80 * time.Millisecond, func() {
+		time.AfterFunc(60 * time.Millisecond, func() {
 			defer wg.Done()
 			err := m.PushMessage("Hello with a delay")
 			assert.Nil(t, err)
@@ -115,7 +115,7 @@ func TestChanMailbox_Receive(t *testing.T) {
 
 		// but the mailbox is obviously going to receive this message so its timeout
 		// checking start-time will be reset; so both messages should get delivered
-		time.AfterFunc(80 * time.Millisecond, func() {
+		time.AfterFunc(60 * time.Millisecond, func() {
 			defer wg.Done()
 			err := m.PushSystemMessage("Hello with a delay")
 			assert.Nil(t, err)
@@ -129,7 +129,9 @@ func TestChanMailbox_Receive(t *testing.T) {
 		})
 		// both messages should get delivered so our message handler is going to return
 		// true and exit before the timeout gets triggered.
-		assert.Nil(t, err)
+		if !assert.Nil(t, err) {
+			t.Errorf("total %d messages received, expected: %d", i, 2)
+		}
 
 		wg.Wait()
 	})
