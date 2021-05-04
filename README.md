@@ -68,12 +68,4 @@ func echo(actor *goactor.Actor) {
 ```
 So given the actor function, echo, we use the Spawn function to start an isolated actor. The spawned actor is just the echo function, and it will be alive and running as long as the echo function has not returned.
 
-_[*1]_ `goactor.Spawn` takes two parameters, the first is our actor func, and the second one is a `mailbox builder` which we will talk about it later. It returns a `PID` (process identifier) which is used to send messages to the actor.
-
-_[*2]_ `goactor.Send` takes two parameters as well, the target actor's PID and the message to send. It returns an error in case of a disposed mailbox (which happens when the actor is no longer alive), or due to a mailbox's push timeout which you can set using a mailbox builder when you spawn your actor.
-
-_[*3]_ As you know, the **main goroutine** doesn't wait for other concurrent goroutines to finish, therefore you may not see the result of their work. Since **the building block of our actors are goroutines**, we need to make sure that our echo actor has enough time to show the result of its work.
-
-_[*4]_ `goactor.Receive` accepts a message handler function with a signature of `goactor.MessageHandler`. Here's its signature: `func(message interface{}) (loop bool)`. The method `goactor.Receive` blocks the routine and processes the messages saved in the mailbox by dispatching them to our `MessageHandler` one by one until the handler returns `false`. If no messages are in the mailbox, it will listen for new ones to be received and processed. Your `MessageHandler` should return `true` if you want to process more messages. Note that returning `false` inside your `MessageHandler` does not stop the mailbox from receiving new messages. `goactor.Receive` returns an error if the mailbox is closed.
-
-**NOTE:** no goroutines should be spawned inside an actor (aka actor function) because an unhandled panic in that goroutine will spread out to the entire program.
+To read more on this example, head to the wiki section page [Basics](https://github.com/hedisam/goactor/wiki/Basics#the-same-first-example-from-the-readme-but-with-more-details) where you can find in deep explanation on the numbered lines of the code (e.g. `[*1]`).
