@@ -24,7 +24,7 @@ type Actor struct {
 	self            *p.PID
 	ctx 			context.Context
 	ctxCancel		func()
-	msgHandler 		func(message interface{}) (loop bool)
+	msgHandler 		MessageHandler
 }
 
 func newActor(mailbox Mailbox, manager relationManager) *Actor {
@@ -53,12 +53,12 @@ func (a *Actor) Self() *p.PID {
 	return a.self
 }
 
-func (a *Actor) Receive(handler func(message interface{}) (loop bool)) error {
+func (a *Actor) Receive(handler MessageHandler) error {
 	a.msgHandler = handler
 	return a.mailbox.Receive(handler, a.systemMessageHandler)
 }
 
-func (a *Actor) ReceiveWithTimeout(timeout time.Duration, handler func(message interface{}) (loop bool)) error {
+func (a *Actor) ReceiveWithTimeout(timeout time.Duration, handler MessageHandler) error {
 	a.msgHandler = handler
 	return a.mailbox.ReceiveWithTimeout(timeout, handler, a.systemMessageHandler)
 }

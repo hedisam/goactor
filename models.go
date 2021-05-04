@@ -30,3 +30,4 @@ type relationManager interface {
 
 type ActorFunc func(actor *Actor)
 type MailboxBuilderFunc func() Mailbox
+type MessageHandler func(message interface{}) (loop bool)
