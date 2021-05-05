@@ -14,7 +14,7 @@ Well, simply put based on definition, the Actor Model defines a concurrency mode
 * [Monitoring & Parent actor](https://github.com/hedisam/goactor#monitoring--parent-actor)
 * [Link to another actor](https://github.com/hedisam/goactor#link-to-another-actor)
 * [Register an actor with a name](https://github.com/hedisam/goactor#register-an-actor-with-a-name)
-* [Supervisors & supervision tree](https://github.com/hedisam/goactor#supervisors--supervision-tree))
+* [Supervisors & Supervision tree](https://github.com/hedisam/goactor#supervisors--supervision-tree)
 
 ## Todo:
 * Complete this README
