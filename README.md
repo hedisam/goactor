@@ -14,7 +14,7 @@ Well, simply put based on definition, the Actor Model defines a concurrency mode
 * [Monitoring & Parent actor](https://github.com/hedisam/goactor#monitoring--parent-actor)
 * [Link to another actor](https://github.com/hedisam/goactor#link-to-another-actor)
 * [Register an actor with a name](https://github.com/hedisam/goactor#register-an-actor-with-a-name)
-* [Supervisors & Supervision tree](https://github.com/hedisam/goactor#supervisors--supervision-tree)
+* [Supervisors & Supervision tree](https://github.com/hedisam/goactor/blob/master/README.md#supervisor--supervision-tree)
 
 ## Todo:
 * Complete this README
@@ -236,5 +236,6 @@ In the second log message you can see the actor with id `6173556d-8ae4-4e6c-a35e
 Note that the second log message has been printed by the parent actor's internal methods and not by its `ReceiveWithTimeout` written in the sample code.
 
 ### Register an actor with a name
-
+To be added in the next following days
 ### Supervisor & Supervision tree
+To be added in the next following days
