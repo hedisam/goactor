@@ -13,6 +13,7 @@ Well, simply put based on definition, the Actor Model defines a concurrency mode
 * [A basic example](https://github.com/hedisam/goactor#a-basic-example)
 * [Monitoring & Parent actor](https://github.com/hedisam/goactor#monitoring--parent-actor)
 * [Link to another actor](https://github.com/hedisam/goactor#link-to-another-actor)
+	* [Trap Exit functionality](https://github.com/hedisam/goactor#link--trap-exit)
 * [Register an actor with a name](https://github.com/hedisam/goactor#register-an-actor-with-a-name)
 * [Supervisors & Supervision tree](https://github.com/hedisam/goactor/blob/master/README.md#supervisor--supervision-tree)
 
@@ -23,6 +24,7 @@ Well, simply put based on definition, the Actor Model defines a concurrency mode
 * Writing tests for the supervisor package
 * Refactoring (simplify) the supervisor package 
 * Refactoring error messages and comments, also comment out the remaining parts.
+* Document the project
 
 ## How to install it?
  Using `go get` command in your terminal: `go get -u github.com/hedisam/goactor` or if your project has go modules enabled, just import the package `github.com/hedisam/goactor` and then run `go mod tidy`.
@@ -234,7 +236,8 @@ The actor with id `48804599-d184-40a7-85fc-3973f0e3f729` is the 'iWillPanic' act
 In the second log message you can see the actor with id `6173556d-8ae4-4e6c-a35e-f0b51e0ed8e9` which is our parent actor. The log message shows that it has exited because of receiving an abnormal exit message that is due to being linked to an actor that has panic-ed.
 
 Note that the second log message has been printed by the parent actor's internal methods and not by its `ReceiveWithTimeout` written in the sample code.
-
+#### Link & Trap Exit
+To be added in the next following days
 ### Register an actor with a name
 To be added in the next following days
 ### Supervisor & Supervision tree
