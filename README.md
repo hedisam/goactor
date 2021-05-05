@@ -24,6 +24,7 @@ type ActorFunc func(actor *Actor)
 ```
 So any function that implements `goactor.ActorFunc` type will fit our needs.
 
+### A basic example
 Let's spawn an echo actor and send it a message:
 
 ```golang
