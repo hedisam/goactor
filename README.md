@@ -69,3 +69,67 @@ func echo(actor *goactor.Actor) {
 So given the actor function, echo, we use the Spawn function to start an isolated actor. The spawned actor is just the echo function, and it will be alive and running as long as the echo function has not returned.
 
 To read more on this example, head to the wiki section page [Basics](https://github.com/hedisam/goactor/wiki/Basics#the-same-first-example-from-the-readme-but-with-more-details) where you can find in deep explanation on the numbered lines of the code (e.g. `[*1]`).
+
+#### Monitoring & Parent actor
+
+```golang
+package main
+
+import (
+	"fmt"
+	"github.com/hedisam/goactor"
+	"github.com/hedisam/goactor/sysmsg"
+	"log"
+	"time"
+)
+
+func main() {
+	parent, dispose := goactor.NewParentActor(nil)
+	defer dispose() // don't forget to defer the dispose function of a parent actor
+
+	iPanicPID := goactor.Spawn(iWillPanic, nil)
+
+	// when you monitor another actor, you expect to get notified about anything (bad) that happens to the target actor.
+	err := parent.Monitor(iPanicPID)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// let's send a message to the iWillPanic actor which is supposed to panic as soon as it wants to process the message
+	err = goactor.Send(iPanicPID, "No matter what message it is, it cause you to panic")
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// ReceiveWithTimeout returns a timeout error if no messages came through by the specified timeout
+	err = parent.ReceiveWithTimeout(time.Millisecond * 100, func(message interface{}) (loop bool) {
+		switch msg := message.(type) {
+		case sysmsg.SystemMessage:
+			fmt.Printf("[+] parent received a system message from %s: %v", msg.Sender().ID(), msg)
+		}
+		return false
+	})
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func iWillPanic(actor *goactor.Actor) {
+	_ = actor.Receive(func(message interface{}) (loop bool) {
+		// after panic-ing, iWillPanic actor broadcasts a specific system message of type sysmsg.SystemMessage so any actor that's linked
+		// or monitoring this one will receive the message.
+		panic(message)
+	})
+}
+
+```
+And here's the output:
+```
+2021/05/05 16:32:04 dispose: actor a8895eb4-302c-4ed9-86f5-3aada8b5c8c6 had a panic, reason: No matter what message it is, it cause you to panic
+[+] parent received a system message from a8895eb4-302c-4ed9-86f5-3aada8b5c8c6: {0xc00016a140 No matter what message it is, it cause you to panic <nil>}
+```
+The first line of the output is a log message internally printed by the panic-ed actor, and the second one is the message received and printed by our parent actor.
+
+You don't need to spawn an `ActorFunc` function to create a `parent` actor since it works and runs in the same goroutine you use to create it (in our example it would be the main goroutine). So it's important to know it can only survive from panics that happen within its goroutine's boundaries.
