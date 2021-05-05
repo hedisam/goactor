@@ -71,6 +71,9 @@ So given the actor function, echo, we use the Spawn function to start an isolate
 To read more on this example, head to the wiki section page [Basics](https://github.com/hedisam/goactor/wiki/Basics#the-same-first-example-from-the-readme-but-with-more-details) where you can find in deep explanation on the numbered lines of the code (e.g. `[*1]`).
 
 #### Monitoring & Parent actor
+To receive a message you need to use an actor's receive method (e.g. `actor.Receive(...)` and that implies you to be within the actor's `ActorFunc` body but sometimes you want to receive and process a message outside of an actor's boundary. That's when you can embrace a `Parent` actor which doesn't need to be spawned.
+
+Here we create a parent actor to `Monitor` another one that is supposed to panic. So we get notified when it panics/exits.
 
 ```golang
 package main
@@ -84,6 +87,9 @@ import (
 )
 
 func main() {
+	// NewParentActor accepts a mailbox builder function (MailboxBuilderFunc) as its parameter, just like the
+	// second argument of goactor.Spawn
+	// MailboxBuilderFunc can be used to provide a customized mailbox to the actor.
 	parent, dispose := goactor.NewParentActor(nil)
 	defer dispose() // don't forget to defer the dispose function of a parent actor
 
@@ -118,8 +124,8 @@ func main() {
 
 func iWillPanic(actor *goactor.Actor) {
 	_ = actor.Receive(func(message interface{}) (loop bool) {
-		// after panic-ing, iWillPanic actor broadcasts a specific system message of type sysmsg.SystemMessage so any actor that's linked
-		// or monitoring this one will receive the message.
+		// after panic-ing, iWillPanic actor broadcasts a specific system message of type sysmsg.SystemMessage so
+		// any actor that's linked or monitoring this one will receive the message.
 		panic(message)
 	})
 }
