@@ -70,7 +70,7 @@ So given the actor function, echo, we use the Spawn function to start an isolate
 
 To read more on this example, head to the wiki section page [Basics](https://github.com/hedisam/goactor/wiki/Basics#the-same-first-example-from-the-readme-but-with-more-details) where you can find in deep explanation on the numbered lines of the code (e.g. `[*1]`).
 
-#### Monitoring & Parent actor
+### Monitoring & Parent actor
 To receive a message you need to use an actor's receive method (e.g. `actor.Receive(...)` and that implies you to be within the actor's `ActorFunc` body but sometimes you want to receive and process a message outside of an actor's boundary. That's when you can embrace a `Parent` actor which doesn't need to be spawned.
 
 Here we create a parent actor to `Monitor` another one that is supposed to panic. So we get notified when it panics/exits.
@@ -139,3 +139,79 @@ And here's the output:
 The first line of the output is a log message internally printed by the panic-ed actor, and the second one is the message received and printed by our parent actor.
 
 You don't need to spawn an `ActorFunc` function to create a `parent` actor since it works and runs in the same goroutine you use to create it (in our example it would be the main goroutine). So it's important to know it can only survive from panics that happen within its goroutine's boundaries.
+
+### Link to another actor
+We use the previous example but instead of monitoring the 'iWillPanic', we `Link` our parent actor to it. 
+The difference between `Monitor` and `Link` is that if an actor exit abnormally (e.g. panics), all of its linked actors will exit, too, while a monitor actor only gets notified with no harm in such situations.
+
+So here we expect our parent actor to exit along with its linked 'iWillPanic' one:
+
+```golang
+package main
+
+import (
+	"fmt"
+	"github.com/hedisam/goactor"
+	"github.com/hedisam/goactor/sysmsg"
+	"log"
+	"time"
+)
+
+func main() {
+	parent, dispose := goactor.NewParentActor(nil)
+	defer dispose()
+
+	iPanicPID := goactor.Spawn(iWillPanic, nil)
+
+	///////////////////////////
+	// the following line of code has changed compared to the previous sample code
+	//////////////////////////
+	// our parent actor will panic/exit if its linked actor panics
+	err := parent.Link(iPanicPID)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// let's send a message to iWillPanic actor which is supposed to panic as soon as it wants to process the message
+	err = goactor.Send(iPanicPID, "No matter what message it is, it cause you to panic")
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	
+	/////////////////
+	// the following receive method should not get any messages since the parent actor will exit along
+	// with 'iWillPanic'
+	////////////////
+	// ReceiveWithTimeout returns a timeout error if no messages came through by the specified timeout
+	err = parent.ReceiveWithTimeout(time.Millisecond * 100, func(message interface{}) (loop bool) {
+		switch msg := message.(type) {
+		case sysmsg.SystemMessage:
+			fmt.Printf("[+] parent received a system message from %s: %v", msg.Sender().ID(), msg)
+		}
+		return false
+	})
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func iWillPanic(actor *goactor.Actor) {
+	_ = actor.Receive(func(message interface{}) (loop bool) {
+		// after panic-ing, iWillPanic actor broadcasts a specific system message of type sysmsg.SystemMessage so
+		// any actor that's linked or monitoring this one will receive the message.
+		panic(message)
+	})
+}
+
+```
+And here's the output:
+```
+2021/05/05 18:10:20 dispose: actor 48804599-d184-40a7-85fc-3973f0e3f729 had a panic, reason: No matter what message it is, it cause you to panic
+2021/05/05 18:10:20 actor 6173556d-8ae4-4e6c-a35e-f0b51e0ed8e9 received an abnormal exit message from 48804599-d184-40a7-85fc-3973f0e3f729, reason: No matter what message it is, it cause you to panic
+```
+The actor with id `48804599-d184-40a7-85fc-3973f0e3f729` is the 'iWillPanic' actor whose panic has been handled.
+In the second log message you can see the actor with id `6173556d-8ae4-4e6c-a35e-f0b51e0ed8e9` which is our parent actor. The log message shows that it has exited because of receiving an abnormal exit message that is due to being linked to an actor that has panic-ed.
+
+Note that the second log message has been printed by the parent actor's internal methods and not by its `ReceiveWithTimeout` written in the sample code.
