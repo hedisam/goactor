@@ -1,5 +1,5 @@
 # GoActor
-Golang Actor Model with an Erlang/Elixir API style.
+Go Actor Model with an Erlang/Elixir API style.
 
 Inspired by Erlang/Elixir's concurrency model, goactor provides a toolkit to spawn and supervise isolated processes that can safely run codes which could panic, without affecting either other processes or the rest of your program.
 
