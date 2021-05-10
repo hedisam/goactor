@@ -22,6 +22,9 @@ type Actor struct {
 	mailbox         Mailbox
 	trapExit        int32
 	self            *p.PID
+	// it's not the best practice to hold a context object in another struct object and we should provide the context
+	// in function/method calls as a parameter, but here in this case we have do this to make it possible for supervisors
+	// to signal the actor's user by canceling the context using the shutdown method
 	ctx 			context.Context
 	ctxCancel		func()
 	msgHandler 		MessageHandler
