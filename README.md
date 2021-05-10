@@ -237,8 +237,8 @@ In the second log message you can see the actor with id `6173556d-8ae4-4e6c-a35e
 
 Note that the second log message has been printed by the parent actor's internal methods and not by its `ReceiveWithTimeout` written in the sample code.
 #### Link & Trap Exit
-To be added in the next following days
+Its How-to-do to be added in the next following days
 ### Register an actor with a name
-To be added in the next following days
+Its How-to-do to be added in the next following days
 ### Supervisor & Supervision tree
-To be added in the next following days
+Its How-to-do to be added in the next following days
