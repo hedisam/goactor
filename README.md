@@ -314,7 +314,7 @@ Output:
 [!] parent actor is ok
 2021/05/11 18:18:34 dispose: actor caba2187-b9bd-4cab-9ce6-e6ebe3bce584 had a panic, reason: No matter what message it is, it cause you to panic
 ```
-The first two lines are `fmt` messages printed by the `parent` actor and the last one is a `log` message which belongs to the `iWillPanic` actor and shows that it has panic-ed. The `log` message should've been printed in the first line but be aware that printing `log` messages take a bit longer compared to normal `fmt` ones so don't get confused by the order of the print.<br/>
+The first two lines are `fmt` messages printed by the `parent` actor and the last one is a `log` message which belongs to the `iWillPanic` actor that shows it has panic-ed. The `log` message should've been printed in the first line but be aware that printing `log` messages take a bit longer compared to normal `fmt` ones so don't get confused by the order of the print.<br/>
 Nevertheless, you can see that the `parent` actor has not panic-ed and has exited normally.
 ### Register an actor with a name
 Its How-to-do to be added in the next following days
