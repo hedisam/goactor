@@ -162,8 +162,8 @@ The first line of the output is a log message internally printed by the panic-ed
 You don't need to spawn an `ActorFunc` function to create a `parent` actor since it works and runs in the same goroutine you use to create it (in our example it would be the main goroutine). So it's important to know it can only survive from panics that happen within its goroutine's boundaries.
 
 ### Link to another actor
-We use the previous example but instead of monitoring the 'iWillPanic', we `Link` our parent actor to it. 
-The difference between `Monitor` and `Link` is that if an actor exit abnormally (e.g. panics), all of its linked actors will exit, too, while a monitor actor only gets notified with no harm in such situations.
+We use the previous example but instead of monitoring the 'iWillPanic' actor, we `Link` our parent actor to it. 
+The difference between `Monitor` and `Link` is that if an actor exit abnormally (e.g. panics), all of its linked actors will exit, too, while a monitor actor only gets notified with no harm in such situations. Also, `Link` creates a two-way relationship between the actors, so either one if exits abnormally causes the other to exit, too.
 
 So here we expect our parent actor to exit along with its linked 'iWillPanic' one:
 
