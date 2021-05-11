@@ -165,7 +165,7 @@ You don't need to spawn an `ActorFunc` function to create a `parent` actor since
 We use the previous example but instead of monitoring the 'iWillPanic' actor, we `Link` our parent actor to it. 
 The difference between `Monitor` and `Link` is that if an actor exit abnormally (e.g. panics), all of its linked actors will exit, too, while a monitor actor only gets notified with no harm in such situations. Also, `Link` creates a two-way relationship between the actors, so either one if exits abnormally causes the other to exit, too.
 
-So here we expect our parent actor to exit along with its linked 'iWillPanic' one:
+Here we expect our parent actor to exit along with its linked 'iWillPanic' one:
 
 ```golang
 package main
@@ -236,8 +236,86 @@ The actor with id `48804599-d184-40a7-85fc-3973f0e3f729` is the 'iWillPanic' act
 In the second log message you can see the actor with id `6173556d-8ae4-4e6c-a35e-f0b51e0ed8e9` which is our parent actor. The log message shows that it has exited because of receiving an abnormal exit message that is due to being linked to an actor that has panic-ed.
 
 Note that the second log message has been printed by the parent actor's internal methods and not by its `ReceiveWithTimeout` written in the sample code.
+
 #### Link & Trap Exit
-Its How-to-do to be added in the next following days
+When an actor exits or gets terminated, it notifies its linked (and monitor) actors by broadcasting a system message which will be handled internally by the actors that receive it. But what if you wanted to handle this kind of system messages by yourself? Well, you can just do that by trapping exit messages.<br/> 
+From the example below you can see that the parent actor will not panic like it did in the previous example since we've set trap exit to true for it.
+
+```golang
+package main
+
+import (
+	"fmt"
+	"github.com/hedisam/goactor"
+	"github.com/hedisam/goactor/mailbox"
+	"github.com/hedisam/goactor/sysmsg"
+	"log"
+	"time"
+)
+
+func main() {
+	// let's provide each of our actors a different customized mailbox
+	queueMailboxBuilder := func() goactor.Mailbox {
+		return mailbox.NewQueueMailbox(5, 5, 100 * time.Millisecond, mailbox.DefaultGoSchedulerInterval)
+	}
+	chanMailboxBuilder := func() goactor.Mailbox {
+		return mailbox.NewChanMailbox(5, 5, 100 * time.Millisecond)
+	}
+
+	parent, dispose := goactor.NewParentActor(queueMailboxBuilder)
+	defer dispose()
+
+	// by trapping exit messages the parent actor can survive if its linked actors panic or exit abnormally
+	parent.SetTrapExit(true)
+
+	iPanicPID := goactor.Spawn(iWillPanic, chanMailboxBuilder)
+
+	err := parent.Link(iPanicPID)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// let's send a message to iWillPanic actor which is supposed to panic as soon as it wants to process the message
+	err = goactor.Send(iPanicPID, "No matter what message it is, it cause you to panic")
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// we expect to receive a system message since the parent actor is trapping exit messages
+	err = parent.ReceiveWithTimeout(time.Millisecond * 100, func(message interface{}) (loop bool) {
+		switch msg := message.(type) {
+		case sysmsg.SystemMessage:
+			fmt.Printf("[+] parent received a system message from %s: %v\n", msg.Sender().ID(), msg)
+		}
+		return false
+	})
+	// receive timeout is not going to get triggered so this err should be nil
+	if err != nil {
+		log.Println(err)
+	}
+
+	fmt.Println("[!] parent actor is ok")
+}
+
+func iWillPanic(actor *goactor.Actor) {
+	_ = actor.Receive(func(message interface{}) (loop bool) {
+		// after panic-ing, iWillPanic actor broadcasts a specific system message of type sysmsg.SystemMessage so any
+		// actor that's linked or monitoring this one will receive the message.
+		panic(message)
+	})
+}
+
+```
+Output:
+```
+[+] parent received a system message from caba2187-b9bd-4cab-9ce6-e6ebe3bce584: {0xc000040180 No matter what message it is, it cause you to panic <nil>}
+[!] parent actor is ok
+2021/05/11 18:18:34 dispose: actor caba2187-b9bd-4cab-9ce6-e6ebe3bce584 had a panic, reason: No matter what message it is, it cause you to panic
+```
+The first two lines are `fmt` messages printed by the `parent` actor and the last one is a `log` message which belongs to the `iWillPanic` actor and shows that it has panic-ed. The `log` message should've been printed in the first line but be aware that printing `log` messages take a bit longer compared to normal `fmt` ones so don't get confused by the order of the print.<br/>
+Nevertheless, you can see that the `parent` actor has not panic-ed and has exited normally.
 ### Register an actor with a name
 Its How-to-do to be added in the next following days
 ### Supervisor & Supervision tree
