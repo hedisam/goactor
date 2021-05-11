@@ -239,7 +239,7 @@ Note that the second log message has been printed by the parent actor's internal
 
 #### Link & Trap Exit
 When an actor exits or gets terminated, it notifies its linked (and monitor) actors by broadcasting a system message which will be handled internally by the actors that receive it. But what if you wanted to handle this kind of system messages by yourself? Well, you can just do that by trapping exit messages.<br/> 
-From the example below you can see that the parent actor will not panic like it did in the previous example since we've set trap exit to true for it.
+From the example below, you can see that the parent actor will not panic as it did in the previous example since we've set trap exit to true for it.
 
 ```golang
 package main
