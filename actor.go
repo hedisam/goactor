@@ -137,6 +137,9 @@ func (a *Actor) Demonitor(pid *p.PID) error {
 
 func (a *Actor) shutdown() {
 	a.ctxCancel()
+	// todo: mailbox should not get disposed in the shutdown method as it's going to be used by the supervisor
+	// to shutdown an actor (by cancelling the actor's context), and in such cases the actor should be able to receive
+	// an appropriate system message
 	a.mailbox.Dispose()
 	a.relationManager.Dispose()
 }
