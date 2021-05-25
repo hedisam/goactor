@@ -25,6 +25,7 @@ Well, simply put based on definition, the Actor Model defines a concurrency mode
 * Refactoring (simplify) the supervisor package 
 * Refactoring error messages and comments, also comment out the remaining parts.
 * Document the project
+* Logging 
 
 ## How to install it?
  Using `go get` command in your terminal: `go get -u github.com/hedisam/goactor` or if your project has go modules enabled, just import the package `github.com/hedisam/goactor` and then run `go mod tidy`.
