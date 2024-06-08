@@ -12,13 +12,13 @@ const (
 	// StrategyOneForOne if a child process terminates, only that process is restarted
 	StrategyOneForOne StrategyType = ":one_for_one"
 
-	// StrategyOptionOneForAll if a child process terminates, all other child processes are terminated
+	// StrategyOneForAll if a child process terminates, all other child processes are terminated
 	// and then all of them (including the terminated one) are restarted.
-	StrategyOptionOneForAll StrategyType = ":one_for_all"
+	StrategyOneForAll StrategyType = ":one_for_all"
 
-	// StrategyOptionRestForOne if a child process terminates, the terminated child process and
+	// StrategyRestForOne if a child process terminates, the terminated child process and
 	// the rest of the specs started after it, are terminated and restarted.
-	StrategyOptionRestForOne StrategyType = ":rest_for_one"
+	StrategyRestForOne StrategyType = ":rest_for_one"
 )
 
 // Default values for restart strategy.
@@ -49,8 +49,22 @@ type Strategy struct {
 	Period      uint
 }
 
-// NewStrategy creates a new supervision strategy.
-func NewStrategy(strategyType StrategyType, opts ...StrategyOption) *Strategy {
+// OneForOneStrategy returns a StrategyOneForOne supervision strategy.
+func OneForOneStrategy(opts ...StrategyOption) *Strategy {
+	return newStrategy(StrategyOneForOne, opts...)
+}
+
+// OneForAllStrategy returns a StrategyOneForAll supervision strategy.
+func OneForAllStrategy(opts ...StrategyOption) *Strategy {
+	return newStrategy(StrategyOneForAll, opts...)
+}
+
+// RestForOneStrategy returns a StrategyRestForOne supervision strategy.
+func RestForOneStrategy(opts ...StrategyOption) *Strategy {
+	return newStrategy(StrategyRestForOne, opts...)
+}
+
+func newStrategy(strategyType StrategyType, opts ...StrategyOption) *Strategy {
 	s := &Strategy{
 		Type:        strategyType,
 		MaxRestarts: DefaultMaxRestarts,
@@ -64,7 +78,7 @@ func NewStrategy(strategyType StrategyType, opts ...StrategyOption) *Strategy {
 
 // Validate validates this RestartStrategy.
 func (s *Strategy) Validate() error {
-	validStrategyTypes := []StrategyType{StrategyOneForOne, StrategyOptionOneForAll, StrategyOptionRestForOne}
+	validStrategyTypes := []StrategyType{StrategyOneForOne, StrategyOneForAll, StrategyRestForOne}
 	if !slices.Contains(validStrategyTypes, s.Type) {
 		return fmt.Errorf("invalid restart strategy type %q, valid strategies are: %q", s.Type, validStrategyTypes)
 	}

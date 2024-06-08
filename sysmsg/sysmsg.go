@@ -1,6 +1,8 @@
 package sysmsg
 
-import "context"
+import (
+	"github.com/hedisam/goactor/internal/syspid"
+)
 
 // MessageType defines the system message type.
 type MessageType string
@@ -16,14 +18,9 @@ const (
 	Shutdown MessageType = "system:message:shutdown"
 )
 
-type systemPID interface {
-	ID() string
-	PushSystemMessage(ctx context.Context, msg *Message) error
-}
-
 // Message holds details about a system message.
 type Message struct {
-	Sender systemPID
+	Sender *syspid.PID
 	Reason any
 	Type   MessageType
 	Origin *Message

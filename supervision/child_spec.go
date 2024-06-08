@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/hedisam/goactor/sysmsg"
+	"github.com/hedisam/goactor"
 )
 
 // RestartStrategy determines when to restart a child actor if it terminates.
@@ -35,18 +35,6 @@ const (
 	RestartNever RestartStrategy = ":temporary"
 )
 
-type PID interface {
-	PushSystemMessage(ctx context.Context, msg *sysmsg.Message) error
-}
-
-// ChildSpec defines the specifications for the supervisor children which can be either a child actor or
-// a child supervisor.
-type ChildSpec interface {
-	Name() string
-	StartLink(ctx context.Context) PID
-	RestartStrategy() RestartStrategy
-}
-
 // ValidateChildSpec validates the provided child spec.
 func ValidateChildSpec(spec ChildSpec) error {
 	if spec.Name() == "" {
@@ -58,4 +46,36 @@ func ValidateChildSpec(spec ChildSpec) error {
 		return fmt.Errorf("validate restart strategy: %w", err)
 	}
 	return nil
+}
+
+// ActorChildSpec holds the configuration for spawning a child actor.
+type ActorChildSpec struct {
+	ActorName          string
+	ReceiverFunc       goactor.ReceiveFunc
+	ActorOpts          []goactor.ActorOption
+	RestartingStrategy RestartStrategy
+}
+
+func NewActorChildSpec(name string, restartStrategy RestartStrategy, fn goactor.ReceiveFunc, opts ...goactor.ActorOption) *ActorChildSpec {
+	return &ActorChildSpec{
+		ActorName:          name,
+		ReceiverFunc:       fn,
+		ActorOpts:          opts,
+		RestartingStrategy: restartStrategy,
+	}
+}
+
+// Name returns the name of the actor.
+func (s *ActorChildSpec) Name() string {
+	return s.ActorName
+}
+
+// StartLink spawns the child actor.
+func (s *ActorChildSpec) StartLink(ctx context.Context) *goactor.PID {
+	return goactor.Spawn(ctx, s.ReceiverFunc, s.ActorOpts...)
+}
+
+// RestartStrategy returns the restart strategy which determines when to restart this child actor if it terminates.
+func (s *ActorChildSpec) RestartStrategy() RestartStrategy {
+	return s.RestartingStrategy
 }

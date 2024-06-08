@@ -4,14 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/hedisam/goactor"
 )
 
-type Supervisor struct {
-	nameToChild map[string]ChildSpec
+// ChildSpec defines the specifications for the supervisor children which can be either a child actor or
+// a child supervisor.
+type ChildSpec interface {
+	Name() string
+	StartLink(ctx context.Context) *goactor.PID
+	RestartStrategy() RestartStrategy
 }
 
 // StartSupervisor starts a supervisor for the provided specs.
-func StartSupervisor(ctx context.Context, specs ...ChildSpec) error {
+func StartSupervisor(ctx context.Context, supervisionStrategy *Strategy, specs ...ChildSpec) error {
 	if len(specs) == 0 {
 		return errors.New("no child spec provided")
 	}
@@ -29,14 +35,16 @@ func StartSupervisor(ctx context.Context, specs ...ChildSpec) error {
 		nameToChild[spec.Name()] = spec
 	}
 
+	err := supervisionStrategy.Validate()
+	if err != nil {
+		return fmt.Errorf("validate supervision strategy: %w", err)
+	}
+
 	supervisor := &Supervisor{
+		strategy:    supervisionStrategy,
 		nameToChild: nameToChild,
 	}
-	supervisor.start()
+	supervisor.start(ctx)
 
 	return nil
-}
-
-func (s *Supervisor) start() {
-
 }

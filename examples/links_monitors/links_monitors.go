@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/hedisam/goactor/sysmsg"
 	"time"
 
 	"github.com/hedisam/goactor"
@@ -20,7 +21,7 @@ func main() {
 	})
 
 	parent := goactor.Spawn(ctx, func(ctx context.Context, msg any) (loop bool, err error) {
-		_, ok := goactor.ToSystemMessage(msg)
+		_, ok := sysmsg.ToSystemMessage(msg)
 		if ok {
 			fmt.Printf("[!] ParentActor received system message: %+v\n", msg)
 			return true, nil
