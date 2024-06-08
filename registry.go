@@ -18,6 +18,9 @@ var procRegistry *registry
 
 // InitRegistry initiates the process registry for naming actors.
 func InitRegistry(size uint) {
+	if procRegistry != nil {
+		return
+	}
 	procRegistry = &registry{
 		nameToPID: make(map[string]*PID, size),
 		pidToName: make(map[string]string, size),

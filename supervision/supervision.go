@@ -44,7 +44,10 @@ func StartSupervisor(ctx context.Context, supervisionStrategy *Strategy, specs .
 		strategy:    supervisionStrategy,
 		nameToChild: nameToChild,
 	}
-	supervisor.start(ctx)
+	err = supervisor.start(ctx)
+	if err != nil {
+		return fmt.Errorf("start supervisor actor: %w", err)
+	}
 
 	return nil
 }

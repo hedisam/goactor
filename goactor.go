@@ -34,7 +34,7 @@ func Spawn(ctx context.Context, fn ReceiveFunc, opts ...ActorOption) *PID {
 		var runErr error
 		var sysMsg *sysmsg.Message
 		defer func() {
-			pid.dispose(ctx, sysMsg, runErr)
+			pid.dispose(ctx, sysMsg, runErr, recover())
 		}()
 
 		sysMsg, runErr = pid.run(ctx, config)

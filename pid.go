@@ -44,7 +44,7 @@ type PID struct {
 	id         string
 	dispatcher dispatcher
 	r          receiver
-	sysPID     *syspid.PID
+	SystemPID  *syspid.PID
 
 	relationsMu   sync.RWMutex
 	links         map[string]*PID
@@ -69,7 +69,7 @@ func newPID(r receiver, d dispatcher) *PID {
 		id:            id,
 		dispatcher:    d,
 		r:             r,
-		sysPID:        syspid.NewSystemPID(id, d),
+		SystemPID:     syspid.NewSystemPID(id, d),
 		links:         map[string]*PID{},
 		monitors:      map[string]*PID{},
 		monitored:     map[string]*PID{},
@@ -83,7 +83,7 @@ func (pid *PID) String() string {
 }
 
 func (pid *PID) _SystemPID() *syspid.PID {
-	return pid.sysPID
+	return pid.SystemPID
 }
 
 // Link creates a bidirectional relationship between the two actors.
@@ -268,7 +268,7 @@ func (pid *PID) handleSystemMessage(msg *sysmsg.Message) (delegate bool, err err
 	}
 }
 
-func (pid *PID) dispose(ctx context.Context, origin *sysmsg.Message, err error) {
+func (pid *PID) dispose(ctx context.Context, origin *sysmsg.Message, err error, recovered any) {
 	pid.r.Close()
 
 	reason := any("normal exit")
@@ -278,13 +278,13 @@ func (pid *PID) dispose(ctx context.Context, origin *sysmsg.Message, err error) 
 		typ = sysmsg.AbnormalExit
 	}
 
-	if r := recover(); r != nil {
-		reason = r
+	if recovered != nil {
+		reason = recovered
 		typ = sysmsg.AbnormalExit
 	}
 
 	pid.notifyRelations(ctx, &sysmsg.Message{
-		Sender: pid.sysPID,
+		Sender: pid.SystemPID,
 		Reason: reason,
 		Type:   typ,
 		Origin: origin,
@@ -304,7 +304,7 @@ func (pid *PID) notifyRelations(ctx context.Context, msg *sysmsg.Message) {
 	notify := func(who *PID) error {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		ctxCancels = append(ctxCancels, cancel)
-		return syspid.Send(ctx, who.sysPID, msg)
+		return syspid.Send(ctx, who.SystemPID, msg)
 	}
 
 	pid.relationsMu.Lock()
