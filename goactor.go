@@ -1,93 +1,61 @@
 package goactor
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"github.com/hedisam/goactor/internal/intlpid"
-	"github.com/hedisam/goactor/internal/relations"
-	"github.com/hedisam/goactor/mailbox"
-	p "github.com/hedisam/goactor/pid"
-	"github.com/hedisam/goactor/process"
+
+	"github.com/hedisam/goactor/internal/mailbox"
 )
 
-func DefaultQueueMailbox() Mailbox {
-	return mailbox.NewQueueMailbox(
-		mailbox.DefaultUserMailboxCap,
-		mailbox.DefaultSysMailboxCap,
-		mailbox.DefaultMailboxTimeout,
-		mailbox.DefaultGoSchedulerInterval)
-}
+var (
+	// ErrActorNotFound is returned when an ActorHandler cannot be found by a given name.
+	ErrActorNotFound = errors.New("no actor was found with the given name")
+)
 
-var DefaultChanMailbox = func() Mailbox {
-	return mailbox.NewChanMailbox(
-		mailbox.DefaultUserMailboxCap,
-		mailbox.DefaultSysMailboxCap,
-		mailbox.DefaultMailboxTimeout)
-}
+// Spawn spawns a new actor for the provided ActorFunc and returns the corresponding Process Identifier.
+func Spawn(ctx context.Context, fn ReceiveFunc, opts ...ActorOption) *PID {
+	a := newActor(fn)
+	for _, opt := range opts {
+		opt(a)
+	}
 
-func NewParentActor(mailboxBuilder MailboxBuilderFunc) (*Actor, func()) {
-	actor, _ := setupActor(mailboxBuilder)
-	return actor, actor.dispose
-}
+	m := mailbox.NewChanMailbox()
+	pid := newPID(m, m)
+	a.initFunc(ctx, pid)
 
-func NewFutureActor() *FutureActor {
-	return setupFutureActor()
-}
+	go func() {
+		var runErr error
+		var sysMsg *SystemMessage
+		defer func() {
+			pid.dispose(ctx, sysMsg, runErr)
+		}()
 
-func Spawn(fn ActorFunc, mailboxBuilder MailboxBuilderFunc) *p.PID {
-	actor, pid := setupActor(mailboxBuilder)
-	go spawn(fn, actor)
+		sysMsg, runErr = pid.run(ctx, a)
+	}()
 
 	return pid
 }
 
-func Send(pid *p.PID, msg interface{}) error {
-	if pid == nil {
-		return ErrSendNilPID
+// Send sends a message to an ActorHandler with the provided PID.
+func Send(ctx context.Context, pid ProcessIdentifier, msg any) error {
+	if pid.PID() == nil {
+		return errors.New("cannot send message via a nil PID")
 	}
-	if pid.IsSupervisor() {
-		return ErrSendToSupervisor
-	}
-	err := intlpid.SendMessage(pid.InternalPID(), msg)
+
+	err := pid.PID().dispatcher.PushMessage(ctx, msg)
 	if err != nil {
-		return fmt.Errorf("send failed: %w", err)
+		return fmt.Errorf("push message via dispatcher: %w", err)
 	}
 	return nil
 }
 
-func SendNamed(name string, msg interface{}) error {
-	pid, ok := process.WhereIs(name)
+// SendNamed sends a message to an ActorHandler via its associated name.
+func SendNamed(ctx context.Context, name string, msg any) error {
+	pid, ok := WhereIs(name)
 	if !ok {
-		return ErrSendNameNotFound
+		return fmt.Errorf("%w %q", ErrActorNotFound, name)
 	}
-	return Send(pid, msg)
-}
 
-func setupActor(mailboxBuilder MailboxBuilderFunc) (*Actor, *p.PID) {
-	if mailboxBuilder == nil {
-		mailboxBuilder = DefaultQueueMailbox
-	}
-	m := mailboxBuilder()
-
-	relationManager := relations.NewRelation()
-
-	actor := newActor(m, relationManager)
-
-	localPID := intlpid.NewLocalPID(m, relationManager, false, actor.shutdown)
-	pid := p.ToPID(localPID)
-	actor.self = pid
-
-	return actor, pid
-}
-
-func setupFutureActor() *FutureActor {
-	noShutdown := func() {}
-	m := mailbox.NewQueueMailbox(1, 1, mailbox.DefaultMailboxTimeout, mailbox.DefaultGoSchedulerInterval)
-	localPID := intlpid.NewLocalPID(m, nil, false, noShutdown)
-	featureActor := newFutureActor(m, localPID)
-	return featureActor
-}
-
-func spawn(fn ActorFunc, actor *Actor) {
-	defer actor.dispose()
-	fn(actor)
+	return Send(ctx, pid, msg)
 }
