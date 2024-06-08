@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/hedisam/goactor/internal/mailbox"
+	"github.com/hedisam/goactor/sysmsg"
 )
 
 var (
@@ -31,7 +32,7 @@ func Spawn(ctx context.Context, fn ReceiveFunc, opts ...ActorOption) *PID {
 
 	go func() {
 		var runErr error
-		var sysMsg *SystemMessage
+		var sysMsg *sysmsg.Message
 		defer func() {
 			pid.dispose(ctx, sysMsg, runErr)
 		}()
@@ -63,16 +64,4 @@ func SendNamed(ctx context.Context, name string, msg any) error {
 	}
 
 	return Send(ctx, pid, msg)
-}
-
-func sendSystemMessage(ctx context.Context, pid ProcessIdentifier, msg *SystemMessage) error {
-	if pid.PID() == nil {
-		return errors.New("cannot send message via a nil PID")
-	}
-
-	err := pid.PID().dispatcher.PushSystemMessage(ctx, msg)
-	if err != nil {
-		return fmt.Errorf("push system message via dispatcher: %w", err)
-	}
-	return nil
 }
