@@ -20,7 +20,7 @@ func main() {
 	})
 
 	parent := goactor.Spawn(ctx, func(ctx context.Context, msg any) (loop bool, err error) {
-		_, ok := goactor.IsSystemMessage(msg)
+		_, ok := goactor.ToSystemMessage(msg)
 		if ok {
 			fmt.Printf("[!] ParentActor received system message: %+v\n", msg)
 			return true, nil

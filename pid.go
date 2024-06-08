@@ -181,7 +181,7 @@ func (pid *PID) removeRelation(who *PID, rel relationType) {
 	}
 }
 
-func (pid *PID) run(ctx context.Context, a *actor) (*SystemMessage, error) {
+func (pid *PID) run(ctx context.Context, a *actor) (sysMsg *SystemMessage, err error) {
 	for {
 		msg, isSysMsg, err := pid.r.ReceiveTimeout(ctx, a.receiveTimeoutDuration)
 		if err != nil {
@@ -195,9 +195,13 @@ func (pid *PID) run(ctx context.Context, a *actor) (*SystemMessage, error) {
 			return nil, nil
 		}
 		if isSysMsg {
-			delegate, err := pid.handleSystemMessage(msg)
+			var ok bool
+			sysMsg, ok = ToSystemMessage(msg)
+			if !ok {
+				return nil, fmt.Errorf("non system message received to be handled by system message handler: %T", msg)
+			}
+			delegate, err := pid.handleSystemMessage(sysMsg)
 			if err != nil {
-				sysMsg, _ := msg.(*SystemMessage)
 				return sysMsg, fmt.Errorf("handle system message: %w", err)
 			}
 			if !delegate {
@@ -206,8 +210,10 @@ func (pid *PID) run(ctx context.Context, a *actor) (*SystemMessage, error) {
 		}
 		loop, err := a.receiveFunc(ctx, msg)
 		if err != nil {
-			sysMsg, _ := msg.(*SystemMessage)
-			return sysMsg, fmt.Errorf("msg handler: %w", err)
+			if isSysMsg {
+				return sysMsg, fmt.Errorf("msg handler: %w", err)
+			}
+			return nil, fmt.Errorf("msg handler: %w", err)
 		}
 		if !loop {
 			break
@@ -217,12 +223,7 @@ func (pid *PID) run(ctx context.Context, a *actor) (*SystemMessage, error) {
 	return nil, nil
 }
 
-func (pid *PID) handleSystemMessage(message any) (delegate bool, err error) {
-	msg, ok := message.(*SystemMessage)
-	if !ok {
-		return false, fmt.Errorf("non system message received to be handled by system message handler: %T", message)
-	}
-
+func (pid *PID) handleSystemMessage(msg *SystemMessage) (delegate bool, err error) {
 	rel := pid.relation(msg.Sender)
 	if rel == relNone {
 		// a message is received and no relation was found with the sender? then why did we get a sys message from them?

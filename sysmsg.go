@@ -22,8 +22,8 @@ type SystemMessage struct {
 	Origin *SystemMessage
 }
 
-// IsSystemMessage is a helper to quickly check if a message is of type *SystemMessage.
-func IsSystemMessage(msg any) (sysMsg *SystemMessage, ok bool) {
+// ToSystemMessage is a helper to quickly check if a message is of type *SystemMessage.
+func ToSystemMessage(msg any) (sysMsg *SystemMessage, ok bool) {
 	m, ok := msg.(*SystemMessage)
 	return m, ok
 }
