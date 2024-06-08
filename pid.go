@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/hedisam/goactor/internal/mailbox"
 )
 
@@ -19,6 +20,7 @@ type dispatcher interface {
 	PushSystemMessage(ctx context.Context, msg any) error
 }
 
+// receiver defines methods required for receiving new messages.
 type receiver interface {
 	Receive(ctx context.Context) (msg any, sysMsg bool, err error)
 	ReceiveTimeout(ctx context.Context, d time.Duration) (msg any, sysMsg bool, err error)
@@ -35,10 +37,6 @@ const (
 	relMonitor
 )
 
-type ProcessIdentifier interface {
-	PID() *PID
-}
-
 // PID or ProcessID implements methods required to interact with an ActorHandler.
 type PID struct {
 	id         string
@@ -52,6 +50,7 @@ type PID struct {
 	monitors      map[string]*PID
 }
 
+// PID returns the self PID. It implements the ProcessIdentifier interface.
 func (pid *PID) PID() *PID {
 	return pid
 }
@@ -158,6 +157,29 @@ func (pid *PID) relation(who *PID) relationType {
 	return relNone
 }
 
+func (pid *PID) removeRelation(who *PID, rel relationType) {
+	if rel == relNone {
+		return
+	}
+
+	pid.relationsMu.Lock()
+	defer pid.relationsMu.Unlock()
+
+	switch rel {
+	case relLinked:
+		delete(pid.links, who.id)
+	case relLinkedTrapExit:
+		delete(pid.links, who.id)
+		delete(pid.trapExitLinks, who.id)
+	case relMonitored:
+		delete(pid.monitored, who.id)
+	case relMonitor:
+		delete(pid.monitors, who.id)
+	default:
+		return
+	}
+}
+
 func (pid *PID) run(ctx context.Context, a *actor) (*SystemMessage, error) {
 	for {
 		msg, isSysMsg, err := pid.r.ReceiveTimeout(ctx, a.receiveTimeoutDuration)
@@ -195,7 +217,7 @@ func (pid *PID) run(ctx context.Context, a *actor) (*SystemMessage, error) {
 }
 
 func (pid *PID) handleSystemMessage(message any) (delegate bool, err error) {
-	msg, ok := message.(SystemMessage)
+	msg, ok := message.(*SystemMessage)
 	if !ok {
 		return false, fmt.Errorf("non system message received to be handled by system message handler: %T", message)
 	}
@@ -210,17 +232,23 @@ func (pid *PID) handleSystemMessage(message any) (delegate bool, err error) {
 
 	switch {
 	case msg.Type == SystemMessageNormalExit && equalsAny(rel, relLinkedTrapExit, relLinked, relMonitored):
+		pid.removeRelation(msg.Sender, rel)
 		return true, nil
 	case msg.Type == SystemMessageAbnormalExit && equalsAny(rel, relLinkedTrapExit, relMonitored):
+		pid.removeRelation(msg.Sender, rel)
 		return true, nil
 	case msg.Type == SystemMessageAbnormalExit && rel == relLinked:
-		return false, fmt.Errorf("linked actor %q exited reported abnormal exit", msg.Sender.id)
+		pid.removeRelation(msg.Sender, rel)
+		return false, fmt.Errorf("linked actor %q exited abnormally", msg.Sender.id)
+	case rel == relMonitor && msg.Type == SystemMessageNormalExit || msg.Type == SystemMessageAbnormalExit:
+		pid.removeRelation(msg.Sender, relMonitor)
+		return false, nil
 	case msg.Type == SystemMessageKill:
 		panic(fmt.Sprintf("kill msg not implemented; received from %q", msg.Sender.id))
 	case msg.Type == SystemMessageShutdown:
 		panic(fmt.Sprintf("shutdown msg not implemented; received from %q", msg.Sender.id))
 	default:
-		return false, fmt.Errorf("system message with unknown type received: %s", msg.Type)
+		return false, fmt.Errorf("system message with unknown type %q and/or relation %q received", msg.Type, rel)
 	}
 }
 
@@ -242,12 +270,13 @@ func (pid *PID) dispose(ctx context.Context, origin *SystemMessage, err error) {
 	pid.notifyRelations(ctx, &SystemMessage{
 		Sender: pid,
 		Reason: reason,
-		Type:   SystemMessageType(typ),
+		Type:   typ,
 		Origin: origin,
 	})
 }
 
 func (pid *PID) notifyRelations(ctx context.Context, msg *SystemMessage) {
+	log.Printf("%q is getting disposed with system message: %+v\n", pid.id, msg)
 	var ctxCancels []func()
 	defer func() {
 		for _, fn := range ctxCancels {
@@ -259,24 +288,29 @@ func (pid *PID) notifyRelations(ctx context.Context, msg *SystemMessage) {
 	notify := func(who *PID) error {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		ctxCancels = append(ctxCancels, cancel)
-		return Send(ctx, who, msg)
+		return sendSystemMessage(ctx, who, msg)
 	}
 
 	pid.relationsMu.Lock()
 	defer pid.relationsMu.Unlock()
 
 	for _, linked := range pid.links {
-		// todo: unlink
 		err := notify(linked)
 		if err != nil {
-			log.Printf("%q could not notify linked actor %q of system message %+v\n", pid, linked, msg)
+			log.Printf("%q could not notify linked actor %q of system message: %v: %+v\n", pid, linked, err, msg)
 		}
 	}
 	for _, monitor := range pid.monitors {
-		// todo: de-monitor
 		err := notify(monitor)
 		if err != nil {
-			log.Printf("%q could not notify monitor actor %q of system message %+v\n", pid, monitor, msg)
+			log.Printf("%q could not notify monitor actor %q of system message: %v: %+v\n", pid, monitor, err, msg)
+			continue
+		}
+	}
+	for _, monitored := range pid.monitored {
+		err := notify(monitored)
+		if err != nil {
+			log.Printf("%q could not notify monitored actor %q of system message: %v: %+v\n", pid, monitored, err, msg)
 			continue
 		}
 	}

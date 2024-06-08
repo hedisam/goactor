@@ -4,16 +4,14 @@ package goactor
 type SystemMessageType string
 
 const (
-	// SystemMessageDefault is just a normal & default system message that should not affect anything.
-	SystemMessageDefault = "system:message:default"
-	// SystemMessageAbnormalExit is a type of system message emitted when an ActorHandler exists abnormally.
-	SystemMessageAbnormalExit = "system:message:exit:abnormal"
 	// SystemMessageNormalExit is a type of system message emitted when an ActorHandler exists normally.
-	SystemMessageNormalExit = "system:message:exit:normal"
+	SystemMessageNormalExit SystemMessageType = "system:message:exit:normal"
+	// SystemMessageAbnormalExit is a type of system message emitted when an ActorHandler exists abnormally.
+	SystemMessageAbnormalExit SystemMessageType = "system:message:exit:abnormal"
 	// SystemMessageKill todo
-	SystemMessageKill = "system:message:kill"
+	SystemMessageKill SystemMessageType = "system:message:kill"
 	// SystemMessageShutdown todo
-	SystemMessageShutdown = "system:message:shutdown"
+	SystemMessageShutdown SystemMessageType = "system:message:shutdown"
 )
 
 // SystemMessage holds details about a system message.

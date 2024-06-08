@@ -13,6 +13,11 @@ var (
 	ErrActorNotFound = errors.New("no actor was found with the given name")
 )
 
+// ProcessIdentifier defines a Process Identifier aka PID. It is used to communicate with an Actor.
+type ProcessIdentifier interface {
+	PID() *PID
+}
+
 // Spawn spawns a new actor for the provided ActorFunc and returns the corresponding Process Identifier.
 func Spawn(ctx context.Context, fn ReceiveFunc, opts ...ActorOption) *PID {
 	a := newActor(fn)
@@ -58,4 +63,16 @@ func SendNamed(ctx context.Context, name string, msg any) error {
 	}
 
 	return Send(ctx, pid, msg)
+}
+
+func sendSystemMessage(ctx context.Context, pid ProcessIdentifier, msg *SystemMessage) error {
+	if pid.PID() == nil {
+		return errors.New("cannot send message via a nil PID")
+	}
+
+	err := pid.PID().dispatcher.PushSystemMessage(ctx, msg)
+	if err != nil {
+		return fmt.Errorf("push system message via dispatcher: %w", err)
+	}
+	return nil
 }
