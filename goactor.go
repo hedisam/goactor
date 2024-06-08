@@ -21,14 +21,14 @@ type ProcessIdentifier interface {
 
 // Spawn spawns a new actor for the provided ActorFunc and returns the corresponding Process Identifier.
 func Spawn(ctx context.Context, fn ReceiveFunc, opts ...ActorOption) *PID {
-	a := newActor(fn)
+	config := newActorConfig(fn)
 	for _, opt := range opts {
-		opt(a)
+		opt(config)
 	}
 
 	m := mailbox.NewChanMailbox()
 	pid := newPID(m, m)
-	a.initFunc(ctx, pid)
+	config.initFunc(ctx, pid)
 
 	go func() {
 		var runErr error
@@ -37,7 +37,7 @@ func Spawn(ctx context.Context, fn ReceiveFunc, opts ...ActorOption) *PID {
 			pid.dispose(ctx, sysMsg, runErr)
 		}()
 
-		sysMsg, runErr = pid.run(ctx, a)
+		sysMsg, runErr = pid.run(ctx, config)
 	}()
 
 	return pid

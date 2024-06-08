@@ -194,14 +194,14 @@ func (pid *PID) removeRelation(id string, rel relationType) {
 	}
 }
 
-func (pid *PID) run(ctx context.Context, a *actor) (sysMsg *sysmsg.Message, err error) {
+func (pid *PID) run(ctx context.Context, config *actorConfig) (sysMsg *sysmsg.Message, err error) {
 	for {
-		msg, isSysMsg, err := pid.r.ReceiveTimeout(ctx, a.receiveTimeoutDuration)
+		msg, isSysMsg, err := pid.r.ReceiveTimeout(ctx, config.receiveTimeoutDuration)
 		if err != nil {
 			if !errors.Is(err, mailbox.ErrReceiveTimeout) {
 				return nil, fmt.Errorf("receive incoming messages with timeout: %w", err)
 			}
-			err = a.afterTimeoutFunc(ctx)
+			err = config.afterTimeoutFunc(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("after timeout handler: %w", err)
 			}
@@ -221,7 +221,7 @@ func (pid *PID) run(ctx context.Context, a *actor) (sysMsg *sysmsg.Message, err 
 				continue
 			}
 		}
-		loop, err := a.receiveFunc(ctx, msg)
+		loop, err := config.receiveFunc(ctx, msg)
 		if err != nil {
 			if isSysMsg {
 				return sysMsg, fmt.Errorf("msg handler: %w", err)
