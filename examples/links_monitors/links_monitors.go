@@ -29,7 +29,7 @@ func main() {
 		return true, nil
 	})
 
-	parent.Link(child, false)
+	parent.Link(child, true)
 	err := goactor.Send(ctx, child, "go to sleep")
 	if err != nil {
 		panic(err)

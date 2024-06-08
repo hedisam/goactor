@@ -57,12 +57,13 @@ func (pid *PID) PID() *PID {
 
 func newPID(r receiver, d dispatcher) *PID {
 	return &PID{
-		id:         uuid.NewString(),
-		dispatcher: d,
-		r:          r,
-		links:      map[string]*PID{},
-		monitors:   map[string]*PID{},
-		monitored:  map[string]*PID{},
+		id:            uuid.NewString(),
+		dispatcher:    d,
+		r:             r,
+		links:         map[string]*PID{},
+		monitors:      map[string]*PID{},
+		monitored:     map[string]*PID{},
+		trapExitLinks: map[string]struct{}{},
 	}
 }
 
