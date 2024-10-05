@@ -24,11 +24,11 @@ func main() {
 		log.Fatal("Could not start supervisor:", err)
 	}
 
-	err = goactor.SendNamed(context.Background(), ":alice", "hey alice what's up?")
+	err = goactor.Send(context.Background(), goactor.NamedPID(":alice"), "hey alice what's up?")
 	if err != nil {
 		panic(err)
 	}
-	err = goactor.SendNamed(context.Background(), ":alice", ":panic")
+	err = goactor.Send(context.Background(), goactor.NamedPID(":alice"), ":panic")
 	if err != nil {
 		panic(err)
 	}
@@ -36,7 +36,7 @@ func main() {
 	time.Sleep(time.Second)
 }
 
-func actorAlice(ctx context.Context, msg any) (loop bool, err error) {
+func actorAlice(_ context.Context, msg any) (loop bool, err error) {
 	fmt.Println(":alice received msg:", msg)
 	if msg == ":panic" {
 		panic(msg)

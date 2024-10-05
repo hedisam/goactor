@@ -12,6 +12,8 @@ import (
 var (
 	// ErrActorNotFound is returned when an ActorHandler cannot be found by a given name.
 	ErrActorNotFound = errors.New("no actor was found with the given name")
+	// ErrNilPID is returned when trying to send a message using a nil PID
+	ErrNilPID = errors.New("cannot send message via a nil PID")
 )
 
 // ProcessIdentifier defines a Process Identifier aka PID. It is used to communicate with an Actor.
@@ -44,24 +46,18 @@ func Spawn(ctx context.Context, fn ReceiveFunc, opts ...ActorOption) *PID {
 }
 
 // Send sends a message to an ActorHandler with the provided PID.
-func Send(ctx context.Context, pid ProcessIdentifier, msg any) error {
-	if pid.PID() == nil {
-		return errors.New("cannot send message via a nil PID")
+func Send(ctx context.Context, processIdentifier ProcessIdentifier, msg any) error {
+	pid := processIdentifier.PID()
+	if pid == nil {
+		if _, ok := processIdentifier.(namedPID); ok {
+			return fmt.Errorf("%w: %q", ErrActorNotFound, pid)
+		}
+		return ErrNilPID
 	}
 
-	err := pid.PID().dispatcher.PushMessage(ctx, msg)
+	err := pid.dispatcher.PushMessage(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("push message via dispatcher: %w", err)
 	}
 	return nil
-}
-
-// SendNamed sends a message to an ActorHandler via its associated name.
-func SendNamed(ctx context.Context, name string, msg any) error {
-	pid, ok := WhereIs(name)
-	if !ok {
-		return fmt.Errorf("%w %q", ErrActorNotFound, name)
-	}
-
-	return Send(ctx, pid, msg)
 }

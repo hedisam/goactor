@@ -41,12 +41,12 @@ func main() {
 		panic(err)
 	}
 
-	err = goactor.SendNamed(ctx, ":simple", "You are now registered :yay")
+	err = goactor.Send(ctx, goactor.NamedPID(":simple"), "You are now registered :yay")
 	if err != nil {
 		panic(err)
 	}
 
-	err = goactor.SendNamed(ctx, ":not_found", "This message won't make it")
+	err = goactor.Send(ctx, goactor.NamedPID(":not_found"), "This message won't make it")
 	if err == nil {
 		log.Fatal("Expected to get error when sending to a non existent named actor but got nil")
 	}

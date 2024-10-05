@@ -79,3 +79,20 @@ func WhereIs(name string) (*PID, bool) {
 	pid, ok := processRegistry.nameToPID[name]
 	return pid, ok
 }
+
+// namedPID is used to distinguish a NamedPID from a normal PID.
+type namedPID interface {
+	PID() *PID
+	namedPID()
+}
+
+// NamedPID can be used to find and send message to an actor registered by a name
+type NamedPID string
+
+// PID returns the PID registered by the given name.
+func (name NamedPID) PID() *PID {
+	pid, _ := WhereIs(string(name))
+	return pid
+}
+
+func (name NamedPID) namedPID() {}
