@@ -9,11 +9,20 @@ import (
 	"github.com/hedisam/goactor"
 )
 
+const (
+	// RestartAlways means the child actor is always restarted (the default).
+	RestartAlways RestartStrategy = ":permanent"
+	// RestartTransient means the child actor is restarted only if it terminates abnormally (with an exit reason
+	// other than :normal and :shutdown)
+	RestartTransient RestartStrategy = ":transient"
+	// RestartNever means the child actor is never restarted, regardless of its termination reason.
+	RestartNever RestartStrategy = ":temporary"
+)
+
 // RestartStrategy determines when to restart a child actor if it terminates.
 type RestartStrategy string
 
-// Validate validates this RestartStrategy.
-func (s RestartStrategy) Validate() error {
+func validateRestartStrategy(s RestartStrategy) error {
 	validStrategies := []string{
 		string(RestartAlways),
 		string(RestartTransient),
@@ -25,23 +34,12 @@ func (s RestartStrategy) Validate() error {
 	return nil
 }
 
-const (
-	// RestartAlways means the child actor is always restarted (the default).
-	RestartAlways RestartStrategy = ":permanent"
-	// RestartTransient means the child actor is restarted only if it terminates abnormally (with an exit reason
-	// other than :normal and :shutdown)
-	RestartTransient RestartStrategy = ":transient"
-	// RestartNever means the child actor is never restarted, regardless of its termination reason.
-	RestartNever RestartStrategy = ":temporary"
-)
-
-// ValidateChildSpec validates the provided child spec.
-func ValidateChildSpec(spec ChildSpec) error {
+func validateChildSpec(spec ChildSpec) error {
 	if spec.Name() == "" {
 		return errors.New("supervision child spec name cannot be empty")
 	}
 
-	err := spec.RestartStrategy().Validate()
+	err := validateRestartStrategy(spec.RestartStrategy())
 	if err != nil {
 		return fmt.Errorf("validate restart strategy: %w", err)
 	}
@@ -50,32 +48,32 @@ func ValidateChildSpec(spec ChildSpec) error {
 
 // ActorChildSpec holds the configuration for spawning a child actor.
 type ActorChildSpec struct {
-	ActorName          string
-	ReceiverFunc       goactor.ReceiveFunc
-	ActorOpts          []goactor.ActorOption
-	RestartingStrategy RestartStrategy
+	name               string
+	receiverFunc       goactor.ReceiveFunc
+	opts               []goactor.ActorOption
+	restartingStrategy RestartStrategy
 }
 
 func NewActorChildSpec(name string, restartStrategy RestartStrategy, fn goactor.ReceiveFunc, opts ...goactor.ActorOption) *ActorChildSpec {
 	return &ActorChildSpec{
-		ActorName:          name,
-		ReceiverFunc:       fn,
-		ActorOpts:          opts,
-		RestartingStrategy: restartStrategy,
+		name:               name,
+		receiverFunc:       fn,
+		opts:               opts,
+		restartingStrategy: restartStrategy,
 	}
 }
 
 // Name returns the name of the actor.
 func (s *ActorChildSpec) Name() string {
-	return s.ActorName
+	return s.name
 }
 
 // StartLink spawns the child actor.
 func (s *ActorChildSpec) StartLink(ctx context.Context) *goactor.PID {
-	return goactor.Spawn(ctx, s.ReceiverFunc, s.ActorOpts...)
+	return goactor.Spawn(ctx, s.receiverFunc, s.opts...)
 }
 
 // RestartStrategy returns the restart strategy which determines when to restart this child actor if it terminates.
 func (s *ActorChildSpec) RestartStrategy() RestartStrategy {
-	return s.RestartingStrategy
+	return s.restartingStrategy
 }

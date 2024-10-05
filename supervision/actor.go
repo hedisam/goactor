@@ -14,36 +14,22 @@ type Supervisor struct {
 	strategy    *Strategy
 	nameToChild map[string]ChildSpec
 	self        *goactor.PID
+	initErr     error
 }
 
-func (s *Supervisor) start(ctx context.Context) (err error) {
-	log.Println("Starting supervisor...")
-	_ = goactor.Spawn(
-		ctx,
-		s.Receive,
-		goactor.WithInitFunc(s.Init),
-	)
-
-	defer func() {
-		s.stop(ctx, err)
-	}()
-
+func (s *Supervisor) Init(ctx context.Context, self *goactor.PID) {
+	log.Println("Initialising supervisor...")
+	s.self = self
 	for name, child := range s.nameToChild {
 		pid := child.StartLink(ctx)
 		log.Printf("Child %q with ID %q started\n", name, pid)
 		s.self.Link(pid, true)
 		err := goactor.Register(name, pid)
 		if err != nil {
-			return fmt.Errorf("register child actor %q: %w", name, err)
+			s.initErr = fmt.Errorf("register child actor %q: %w", name, err)
+			return
 		}
 	}
-
-	return nil
-}
-
-func (s *Supervisor) Init(ctx context.Context, pid *goactor.PID) {
-	log.Println("Initialising supervisor...")
-	s.self = pid
 }
 
 func (s *Supervisor) Receive(ctx context.Context, msg any) (loop bool, err error) {

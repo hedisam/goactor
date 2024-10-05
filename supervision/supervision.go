@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/hedisam/goactor"
 )
@@ -17,14 +18,14 @@ type ChildSpec interface {
 }
 
 // StartSupervisor starts a supervisor for the provided specs.
-func StartSupervisor(ctx context.Context, supervisionStrategy *Strategy, specs ...ChildSpec) error {
+func StartSupervisor(ctx context.Context, strategy *Strategy, specs ...ChildSpec) error {
 	if len(specs) == 0 {
 		return errors.New("no child spec provided")
 	}
 
 	nameToChild := make(map[string]ChildSpec, len(specs))
 	for _, spec := range specs {
-		err := ValidateChildSpec(spec)
+		err := validateChildSpec(spec)
 		if err != nil {
 			return fmt.Errorf("validate child spec: %w", err)
 		}
@@ -35,18 +36,23 @@ func StartSupervisor(ctx context.Context, supervisionStrategy *Strategy, specs .
 		nameToChild[spec.Name()] = spec
 	}
 
-	err := supervisionStrategy.Validate()
+	err := strategy.Validate()
 	if err != nil {
 		return fmt.Errorf("validate supervision strategy: %w", err)
 	}
 
-	supervisor := &Supervisor{
-		strategy:    supervisionStrategy,
+	s := &Supervisor{
+		strategy:    strategy,
 		nameToChild: nameToChild,
 	}
-	err = supervisor.start(ctx)
-	if err != nil {
-		return fmt.Errorf("start supervisor actor: %w", err)
+	log.Println("Starting supervisor...")
+	_ = goactor.Spawn(
+		ctx,
+		s.Receive,
+		goactor.WithInitFunc(s.Init),
+	)
+	if s.initErr != nil {
+		return fmt.Errorf("init supervisor actor: %w", err)
 	}
 
 	return nil
