@@ -17,7 +17,7 @@ func main() {
 		supervision.NewActorChildSpec(
 			":alice",
 			supervision.RestartAlways,
-			actorAlice,
+			goactor.NewActor(actorAlice),
 		),
 	)
 	if err != nil {

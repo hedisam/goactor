@@ -12,7 +12,7 @@ type ChanMailbox struct {
 	systemCh  chan any
 	closedCh  chan struct{}
 	closed    atomic.Bool
-	t         *time.Timer
+	timer     *time.Timer
 }
 
 // NewChanMailbox returns a new instance of ChanMailbox.
@@ -21,7 +21,7 @@ func NewChanMailbox() *ChanMailbox {
 		messageCh: make(chan any, DefaultMessagesCap),
 		systemCh:  make(chan any, DefaultSystemCap),
 		closedCh:  make(chan struct{}),
-		t:         time.NewTimer(0),
+		timer:     time.NewTimer(0),
 	}
 }
 
@@ -36,18 +36,18 @@ func (m *ChanMailbox) ReceiveTimeout(ctx context.Context, d time.Duration) (msg 
 		return nil, false, ErrClosedMailbox
 	}
 
-	m.resetTimer(d)
+	m.timer.Reset(d)
 
 	select {
 	case <-ctx.Done():
-		return nil, false, ctx.Err()
+		return nil, false, context.Cause(ctx)
 	case <-m.closedCh:
 		return nil, false, ErrClosedMailbox
 	case msg = <-m.systemCh:
 		return msg, true, nil
 	case msg = <-m.messageCh:
 		return msg, false, nil
-	case <-m.t.C:
+	case <-m.timer.C:
 		return nil, false, ErrReceiveTimeout
 	}
 }
@@ -61,7 +61,7 @@ func (m *ChanMailbox) Receive(ctx context.Context) (msg any, sysMsg bool, err er
 
 	select {
 	case <-ctx.Done():
-		return nil, false, ctx.Err()
+		return nil, false, context.Cause(ctx)
 	case <-m.closedCh:
 		return nil, false, ErrClosedMailbox
 	case msg = <-m.systemCh:
@@ -85,20 +85,13 @@ func (m *ChanMailbox) push(ctx context.Context, msgChan chan<- any, msg any) err
 	}
 
 	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
 	case <-m.closedCh:
 		return ErrClosedMailbox
-	case <-ctx.Done():
-		return ctx.Err()
 	case msgChan <- msg:
 		return nil
 	}
-}
-
-func (m *ChanMailbox) resetTimer(d time.Duration) {
-	if !m.t.Stop() {
-		<-m.t.C
-	}
-	m.t.Reset(d)
 }
 
 // Close closes the mailbox and stops any message listener.

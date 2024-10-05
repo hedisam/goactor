@@ -1,9 +1,5 @@
 package sysmsg
 
-import (
-	"github.com/hedisam/goactor/internal/syspid"
-)
-
 // MessageType defines the system message type.
 type MessageType string
 
@@ -20,10 +16,10 @@ const (
 
 // Message holds details about a system message.
 type Message struct {
-	Sender *syspid.PID
-	Reason any
-	Type   MessageType
-	Origin *Message
+	SenderID string
+	Reason   any
+	Type     MessageType
+	Origin   *Message
 }
 
 // ToSystemMessage is a helper to quickly check if a message is of type *Message.

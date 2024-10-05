@@ -14,13 +14,13 @@ func main() {
 	fmt.Println("----- Links & Monitors ----")
 	ctx := context.Background()
 
-	child := goactor.Spawn(ctx, func(ctx context.Context, msg any) (loop bool, err error) {
+	child, _ := goactor.Spawn(ctx, goactor.NewActor(func(ctx context.Context, msg any) (loop bool, err error) {
 		fmt.Printf("[!] ChildActor: %+v; Sleeping a bit then error\n", msg)
 		time.Sleep(time.Second)
 		return false, errors.New("i'm child actor, got nothing to do so exit with an error")
-	})
+	}))
 
-	parent := goactor.Spawn(ctx, func(ctx context.Context, msg any) (loop bool, err error) {
+	parent, _ := goactor.Spawn(ctx, goactor.NewActor(func(ctx context.Context, msg any) (loop bool, err error) {
 		_, ok := sysmsg.ToSystemMessage(msg)
 		if ok {
 			fmt.Printf("[!] ParentActor received system message: %+v\n", msg)
@@ -28,7 +28,7 @@ func main() {
 		}
 		fmt.Printf("[!] ParentActor: %+v\n", msg)
 		return true, nil
-	})
+	}))
 
 	parent.Link(child, true)
 	err := goactor.Send(ctx, child, "go to sleep")

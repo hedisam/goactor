@@ -49,16 +49,14 @@ func validateChildSpec(spec ChildSpec) error {
 // ActorChildSpec holds the configuration for spawning a child actor.
 type ActorChildSpec struct {
 	name               string
-	receiverFunc       goactor.ReceiveFunc
-	opts               []goactor.ActorOption
+	actor              goactor.Actor
 	restartingStrategy RestartStrategy
 }
 
-func NewActorChildSpec(name string, restartStrategy RestartStrategy, fn goactor.ReceiveFunc, opts ...goactor.ActorOption) *ActorChildSpec {
+func NewActorChildSpec(name string, restartStrategy RestartStrategy, actor goactor.Actor) *ActorChildSpec {
 	return &ActorChildSpec{
 		name:               name,
-		receiverFunc:       fn,
-		opts:               opts,
+		actor:              actor,
 		restartingStrategy: restartStrategy,
 	}
 }
@@ -69,8 +67,12 @@ func (s *ActorChildSpec) Name() string {
 }
 
 // StartLink spawns the child actor.
-func (s *ActorChildSpec) StartLink(ctx context.Context) *goactor.PID {
-	return goactor.Spawn(ctx, s.receiverFunc, s.opts...)
+func (s *ActorChildSpec) StartLink(ctx context.Context) (*goactor.PID, error) {
+	pid, err := goactor.Spawn(ctx, s.actor)
+	if err != nil {
+		return nil, fmt.Errorf("spawn actor child: %w", err)
+	}
+	return pid, nil
 }
 
 // RestartStrategy returns the restart strategy which determines when to restart this child actor if it terminates.

@@ -44,7 +44,8 @@ type PID struct {
 	id         string
 	dispatcher dispatcher
 	r          receiver
-	SystemPID  *syspid.PID
+	// SystemPID has to be exported to be accessible from the supervision package
+	SystemPID *syspid.PID
 
 	relationsMu   sync.RWMutex
 	links         map[string]*PID
@@ -69,7 +70,7 @@ func newPID(r receiver, d dispatcher) *PID {
 		id:            id,
 		dispatcher:    d,
 		r:             r,
-		SystemPID:     syspid.NewSystemPID(id, d),
+		SystemPID:     syspid.New(d),
 		links:         map[string]*PID{},
 		monitors:      map[string]*PID{},
 		monitored:     map[string]*PID{},
@@ -80,10 +81,6 @@ func newPID(r receiver, d dispatcher) *PID {
 // String returns the ID. It implements the Stringer interface.
 func (pid *PID) String() string {
 	return fmt.Sprintf("pid@%s", pid.id)
-}
-
-func (pid *PID) _SystemPID() *syspid.PID {
-	return pid.SystemPID
 }
 
 // Link creates a bidirectional relationship between the two actors.
@@ -194,18 +191,25 @@ func (pid *PID) removeRelation(id string, rel relationType) {
 	}
 }
 
-func (pid *PID) run(ctx context.Context, config *actorConfig) (sysMsg *sysmsg.Message, err error) {
+func (pid *PID) run(ctx context.Context, actor Actor) (sysMsg *sysmsg.Message, err error) {
+	afterTimeout, afterFunc := actor.AfterFunc()
 	for {
-		msg, isSysMsg, err := pid.r.ReceiveTimeout(ctx, config.receiveTimeoutDuration)
+		msg, isSysMsg, err := pid.r.ReceiveTimeout(ctx, afterTimeout)
 		if err != nil {
-			if !errors.Is(err, mailbox.ErrReceiveTimeout) {
+			switch {
+			case errors.Is(err, mailbox.ErrReceiveTimeout):
+				err = afterFunc(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("after timeout handler: %w", err)
+				}
+				return nil, nil
+			case errors.Is(err, context.Canceled),
+				errors.Is(err, context.DeadlineExceeded),
+				errors.Is(err, mailbox.ErrClosedMailbox):
+				return nil, nil
+			default:
 				return nil, fmt.Errorf("receive incoming messages with timeout: %w", err)
 			}
-			err = config.afterTimeoutFunc(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("after timeout handler: %w", err)
-			}
-			return nil, nil
 		}
 		if isSysMsg {
 			var ok bool
@@ -221,7 +225,7 @@ func (pid *PID) run(ctx context.Context, config *actorConfig) (sysMsg *sysmsg.Me
 				continue
 			}
 		}
-		loop, err := config.receiveFunc(ctx, msg)
+		loop, err := actor.Receive(ctx, msg)
 		if err != nil {
 			if isSysMsg {
 				return sysMsg, fmt.Errorf("msg handler: %w", err)
@@ -237,8 +241,7 @@ func (pid *PID) run(ctx context.Context, config *actorConfig) (sysMsg *sysmsg.Me
 }
 
 func (pid *PID) handleSystemMessage(msg *sysmsg.Message) (delegate bool, err error) {
-	senderID := syspid.ID(msg.Sender)
-	rel := pid.relation(senderID)
+	rel := pid.relation(msg.SenderID)
 	if rel == relNone {
 		// a message is received and no relation was found with the sender? then why did we get a sys message from them?
 		// previously linked, died and restarted by supervisor without refreshing relations for this actor?
@@ -248,21 +251,21 @@ func (pid *PID) handleSystemMessage(msg *sysmsg.Message) (delegate bool, err err
 
 	switch {
 	case msg.Type == sysmsg.NormalExit && equalsAny(rel, relLinkedTrapExit, relLinked, relMonitored):
-		pid.removeRelation(senderID, rel)
+		pid.removeRelation(msg.SenderID, rel)
 		return true, nil
 	case msg.Type == sysmsg.AbnormalExit && equalsAny(rel, relLinkedTrapExit, relMonitored):
-		pid.removeRelation(senderID, rel)
+		pid.removeRelation(msg.SenderID, rel)
 		return true, nil
 	case msg.Type == sysmsg.AbnormalExit && rel == relLinked:
-		pid.removeRelation(senderID, rel)
-		return false, fmt.Errorf("linked actor %q exited abnormally", senderID)
+		pid.removeRelation(msg.SenderID, rel)
+		return false, fmt.Errorf("linked actor %q exited abnormally", msg.SenderID)
 	case rel == relMonitor && msg.Type == sysmsg.NormalExit || msg.Type == sysmsg.AbnormalExit:
-		pid.removeRelation(senderID, relMonitor)
+		pid.removeRelation(msg.SenderID, relMonitor)
 		return false, nil
 	case msg.Type == sysmsg.Kill:
-		panic(fmt.Sprintf("kill msg not implemented; received from %q", senderID))
+		panic(fmt.Sprintf("kill msg not implemented; received from %q", msg.SenderID))
 	case msg.Type == sysmsg.Shutdown:
-		panic(fmt.Sprintf("shutdown msg not implemented; received from %q", senderID))
+		panic(fmt.Sprintf("shutdown msg not implemented; received from %q", msg.SenderID))
 	default:
 		return false, fmt.Errorf("system message with unknown type %q and/or relation %q received", msg.Type, rel)
 	}
@@ -284,10 +287,10 @@ func (pid *PID) dispose(ctx context.Context, origin *sysmsg.Message, err error, 
 	}
 
 	pid.notifyRelations(ctx, &sysmsg.Message{
-		Sender: pid.SystemPID,
-		Reason: reason,
-		Type:   typ,
-		Origin: origin,
+		SenderID: pid.ID(),
+		Reason:   reason,
+		Type:     typ,
+		Origin:   origin,
 	})
 }
 

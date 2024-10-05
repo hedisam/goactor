@@ -13,7 +13,7 @@ import (
 // a child supervisor.
 type ChildSpec interface {
 	Name() string
-	StartLink(ctx context.Context) *goactor.PID
+	StartLink(ctx context.Context) (*goactor.PID, error)
 	RestartStrategy() RestartStrategy
 }
 
@@ -45,14 +45,11 @@ func StartSupervisor(ctx context.Context, strategy *Strategy, specs ...ChildSpec
 		strategy:    strategy,
 		nameToChild: nameToChild,
 	}
+
 	log.Println("Starting supervisor...")
-	_ = goactor.Spawn(
-		ctx,
-		s.Receive,
-		goactor.WithInitFunc(s.Init),
-	)
-	if s.initErr != nil {
-		return fmt.Errorf("init supervisor actor: %w", err)
+	_, err = goactor.Spawn(ctx, s)
+	if err != nil {
+		return fmt.Errorf("spawn supervisor actor: %w", err)
 	}
 
 	return nil

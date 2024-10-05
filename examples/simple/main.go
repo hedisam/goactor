@@ -18,20 +18,16 @@ func main() {
 	wg.Add(1)
 	simpleActor := &SimpleActor{
 		wg:      wg,
-		timeout: 2 * time.Second,
+		timeout: 4 * time.Second,
 	}
-	_ = goactor.Spawn(ctx,
-		simpleActor.Receive,
-		goactor.WithInitFunc(simpleActor.Init),
-		goactor.WithAfterFunc(2*simpleActor.timeout, simpleActor.After),
-	)
+	_, _ = goactor.Spawn(ctx, simpleActor)
 
-	err := goactor.Send(ctx, simpleActor.self, "Hey what's up?")
+	err := goactor.Send(ctx, simpleActor, "Hey what's up?")
 	if err != nil {
 		panic(err)
 	}
 	time.Sleep(1200 * time.Millisecond)
-	err = goactor.Send(ctx, simpleActor, "Here's my second Hi :)")
+	err = goactor.Send(ctx, simpleActor.self, "Here's my second Hi :)")
 	if err != nil {
 		panic(err)
 	}
@@ -71,15 +67,18 @@ func (s *SimpleActor) Receive(_ context.Context, msg any) (loop bool, err error)
 	return true, nil
 }
 
-func (s *SimpleActor) After(ctx context.Context) error {
-	fmt.Printf("[!] SimpleActor: no message received after %s; %s elapsed since first msg\n", s.timeout, time.Since(*s.start))
-	s.wg.Done()
-	return nil
+func (s *SimpleActor) AfterFunc() (time.Duration, goactor.AfterFunc) {
+	return s.timeout, func(ctx context.Context) error {
+		fmt.Printf("[!] SimpleActor: no message received after %s; %s elapsed since first msg\n", s.timeout, time.Since(*s.start))
+		s.wg.Done()
+		return nil
+	}
 }
 
-func (s *SimpleActor) Init(ctx context.Context, pid *goactor.PID) {
+func (s *SimpleActor) Init(ctx context.Context, pid *goactor.PID) error {
 	s.self = pid
 	fmt.Printf("[!] Self PID set: %s\n", pid)
+	return nil
 }
 
 func (s *SimpleActor) PID() *goactor.PID {

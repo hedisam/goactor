@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hedisam/goactor/internal/mailbox"
 	"github.com/hedisam/goactor/sysmsg"
@@ -21,28 +22,41 @@ type ProcessIdentifier interface {
 	PID() *PID
 }
 
-// Spawn spawns a new actor for the provided ActorFunc and returns the corresponding Process Identifier.
-func Spawn(ctx context.Context, fn ReceiveFunc, opts ...ActorOption) *PID {
-	config := newActorConfig(fn)
-	for _, opt := range opts {
-		opt(config)
-	}
+// AfterFunc will be called if no messages are received after the specified timeout.
+type AfterFunc func(context.Context) error
 
+// Actor defines the methods required by an actor.
+type Actor interface {
+	// Receive is called when a message is received.
+	Receive(ctx context.Context, msg any) (loop bool, err error)
+	// Init is called before spawning the Actor when the PID is available.
+	Init(ctx context.Context, pid *PID) error
+	// AfterFunc specifies a function to be called if no messages are received after the provided timeout.
+	AfterFunc() (timeout time.Duration, afterFunc AfterFunc)
+}
+
+// Spawn spawns a new actor for the provided ActorFunc and returns the corresponding Process Identifier.
+// It returns the InitFunc error, if any. The returned error can be ignored if no InitFunc has been specified.
+func Spawn(ctx context.Context, actor Actor) (*PID, error) {
 	m := mailbox.NewChanMailbox()
 	pid := newPID(m, m)
-	config.initFunc(ctx, pid)
+	err := actor.Init(ctx, pid)
+	if err != nil {
+		return nil, fmt.Errorf("init actor: %w", err)
+	}
 
 	go func() {
 		var runErr error
 		var sysMsg *sysmsg.Message
 		defer func() {
-			pid.dispose(ctx, sysMsg, runErr, recover())
+			r := recover()
+			pid.dispose(ctx, sysMsg, runErr, r)
 		}()
 
-		sysMsg, runErr = pid.run(ctx, config)
+		sysMsg, runErr = pid.run(ctx, actor)
 	}()
 
-	return pid
+	return pid, nil
 }
 
 // Send sends a message to an ActorHandler with the provided PID.

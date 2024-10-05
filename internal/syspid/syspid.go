@@ -2,26 +2,24 @@ package syspid
 
 import "context"
 
+// Dispatcher is a used to dispatch system messages.
 type Dispatcher interface {
 	PushSystemMessage(ctx context.Context, msg any) error
 }
 
+// PID is a system PID.
 type PID struct {
-	id         string
 	dispatcher Dispatcher
 }
 
-func NewSystemPID(id string, d Dispatcher) *PID {
+// New returns a new system PID.
+func New(d Dispatcher) *PID {
 	return &PID{
-		id:         id,
 		dispatcher: d,
 	}
 }
 
+// Send sends a system message to the specified system PID.
 func Send(ctx context.Context, pid *PID, msg any) error {
 	return pid.dispatcher.PushSystemMessage(ctx, msg)
-}
-
-func ID(pid *PID) string {
-	return pid.id
 }

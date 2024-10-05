@@ -13,7 +13,7 @@ const (
 	DefaultRegistrySize = 1024
 
 	// registrySizeEnvVar can be used to provide a custom value for the Registry.
-	registrySizeEnvVar = "GOACTOR_PROCESS_REGISTRY_SIZE"
+	registrySizeEnvVar = "GOACTOR_PROCESSES_REGISTRY_SIZE"
 )
 
 // registry is used to name goactor processes.
