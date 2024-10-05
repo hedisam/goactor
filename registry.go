@@ -2,26 +2,39 @@ package goactor
 
 import (
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 )
 
-// DefaultRegistrySize is the default initial size for the registry.
-const DefaultRegistrySize = 1024
+const (
+	// DefaultRegistrySize is the default initial size for the registry.
+	DefaultRegistrySize = 1024
 
+	// registrySizeEnvVar can be used to provide a custom value for the Registry.
+	registrySizeEnvVar = "GOACTOR_PROCESS_REGISTRY_SIZE"
+)
+
+// registry is used to name goactor processes.
 type registry struct {
 	nameToPID map[string]*PID
 	pidToName map[string]string
 	mu        sync.RWMutex
 }
 
-var procRegistry *registry
+var processRegistry *registry
 
-// InitRegistry initiates the process registry for naming actors.
-func InitRegistry(size uint) {
-	if procRegistry != nil {
-		return
+func init() {
+	size := DefaultRegistrySize
+	if sizeEnvVar := strings.TrimSpace(os.Getenv(registrySizeEnvVar)); sizeEnvVar != "" {
+		s, err := strconv.Atoi(sizeEnvVar)
+		if err != nil {
+			size = s
+		}
 	}
-	procRegistry = &registry{
+
+	processRegistry = &registry{
 		nameToPID: make(map[string]*PID, size),
 		pidToName: make(map[string]string, size),
 	}
@@ -29,40 +42,40 @@ func InitRegistry(size uint) {
 
 // Register associates a PID with the given name.
 func Register(name string, pid ProcessIdentifier) error {
-	procRegistry.mu.Lock()
-	defer procRegistry.mu.Unlock()
+	processRegistry.mu.Lock()
+	defer processRegistry.mu.Unlock()
 
-	regPID, ok := procRegistry.nameToPID[name]
+	regPID, ok := processRegistry.nameToPID[name]
 	if ok {
 		return fmt.Errorf("name already taken by <%s>", regPID.id)
 	}
-	regName, ok := procRegistry.pidToName[pid.PID().id]
+	regName, ok := processRegistry.pidToName[pid.PID().id]
 	if ok {
 		return fmt.Errorf("pid has already been given another name %q", regName)
 	}
 
-	procRegistry.nameToPID[name] = pid.PID()
+	processRegistry.nameToPID[name] = pid.PID()
 	return nil
 }
 
 // Unregister disassociates a PID from the given name.
 func Unregister(name string) {
-	procRegistry.mu.Lock()
-	defer procRegistry.mu.Unlock()
+	processRegistry.mu.Lock()
+	defer processRegistry.mu.Unlock()
 
-	pid, ok := procRegistry.nameToPID[name]
+	pid, ok := processRegistry.nameToPID[name]
 	if !ok {
 		return
 	}
-	delete(procRegistry.nameToPID, name)
-	delete(procRegistry.pidToName, pid.id)
+	delete(processRegistry.nameToPID, name)
+	delete(processRegistry.pidToName, pid.id)
 }
 
 // WhereIs returns the associated PID with the given name.
 func WhereIs(name string) (*PID, bool) {
-	procRegistry.mu.RLock()
-	defer procRegistry.mu.RUnlock()
+	processRegistry.mu.RLock()
+	defer processRegistry.mu.RUnlock()
 
-	pid, ok := procRegistry.nameToPID[name]
+	pid, ok := processRegistry.nameToPID[name]
 	return pid, ok
 }

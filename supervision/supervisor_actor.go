@@ -18,7 +18,6 @@ type Supervisor struct {
 
 func (s *Supervisor) start(ctx context.Context) (err error) {
 	log.Println("Starting supervisor...")
-	goactor.InitRegistry(goactor.DefaultRegistrySize)
 	_ = goactor.Spawn(
 		ctx,
 		s.Receive,

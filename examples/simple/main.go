@@ -36,7 +36,6 @@ func main() {
 		panic(err)
 	}
 
-	goactor.InitRegistry(1024)
 	err = goactor.Register(":simple", simpleActor)
 	if err != nil {
 		panic(err)
