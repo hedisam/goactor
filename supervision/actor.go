@@ -13,7 +13,7 @@ import (
 
 // Supervisor is a supervisor Actor. It implements the goactor.Actor interface.
 type Supervisor struct {
-	strategy    *Strategy
+	strategy    Strategy
 	nameToChild map[string]ChildSpec
 	self        *goactor.PID
 }
@@ -40,7 +40,7 @@ func (s *Supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
 		s.self.Link(pid, true)
 		err = goactor.Register(name, pid)
 		if err != nil {
-			return fmt.Errorf("register child actor %q: %w", name, err)
+			return fmt.Errorf("could not register child actor %q: %w", name, err)
 		}
 	}
 	return nil
