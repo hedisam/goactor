@@ -20,10 +20,10 @@ func main() {
 	bob := newPanicActor("Bob")
 
 	err := supervision.StartSupervisor(ctx,
-		supervision.OneForOneStrategy(),
+		supervision.NewStrategy(supervision.StrategyOneForOne),
 		supervision.NewSupervisorChildSpec(
 			"child-supervisor",
-			supervision.OneForOneStrategy(),
+			supervision.NewStrategy(supervision.StrategyOneForOne),
 			supervision.RestartAlways,
 			supervision.NewActorChildSpec(
 				"Alice",

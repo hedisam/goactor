@@ -15,7 +15,8 @@ import (
 func main() {
 	err := supervision.StartSupervisor(
 		context.Background(),
-		supervision.OneForOneStrategy(
+		supervision.NewStrategy(
+			supervision.StrategyOneForOne,
 			supervision.StrategyWithPeriod(time.Millisecond*500),
 			supervision.StrategyWithMaxRestarts(2),
 		),

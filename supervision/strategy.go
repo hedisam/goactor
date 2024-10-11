@@ -7,35 +7,38 @@ import (
 )
 
 // StrategyType determines how the supervisor restarts child actors.
-type StrategyType string
+type StrategyType uint
 
 const (
 	// StrategyOneForOne if a child process terminates, only that process is restarted
-	StrategyOneForOne StrategyType = ":one_for_one"
+	StrategyOneForOne StrategyType = iota
 
 	// StrategyOneForAll if a child process terminates, all other child processes are terminated
 	// and then all of them (including the terminated one) are restarted.
-	StrategyOneForAll StrategyType = ":one_for_all"
+	StrategyOneForAll
 
 	// StrategyRestForOne if a child process terminates, the terminated child process and
 	// the rest of the specs started after it, are terminated and restarted.
-	StrategyRestForOne StrategyType = ":rest_for_one"
+	StrategyRestForOne
 )
 
 // Default values for supervision restart strategy.
 const (
-	DefaultMaxRestarts uint = 3
-	DefaultPeriod           = time.Second * 5
+	defaultMaxRestarts uint = 3
+	defaultPeriod           = time.Second * 5
 )
 
+// StrategyOption defines an option function for configuring Strategy.
 type StrategyOption func(s *Strategy)
 
+// StrategyWithMaxRestarts sets the strategy's max allowed restarts within the specified period.
 func StrategyWithMaxRestarts(maxRestarts uint) StrategyOption {
 	return func(s *Strategy) {
 		s.maxRestarts = maxRestarts
 	}
 }
 
+// StrategyWithPeriod sets the strategy's restart period.
 func StrategyWithPeriod(duration time.Duration) StrategyOption {
 	return func(s *Strategy) {
 		if duration > 0 {
@@ -52,26 +55,12 @@ type Strategy struct {
 	period      time.Duration
 }
 
-// OneForOneStrategy returns a StrategyOneForOne supervision strategy.
-func OneForOneStrategy(opts ...StrategyOption) *Strategy {
-	return newStrategy(StrategyOneForOne, opts...)
-}
-
-// OneForAllStrategy returns a StrategyOneForAll supervision strategy.
-func OneForAllStrategy(opts ...StrategyOption) *Strategy {
-	return newStrategy(StrategyOneForAll, opts...)
-}
-
-// RestForOneStrategy returns a StrategyRestForOne supervision strategy.
-func RestForOneStrategy(opts ...StrategyOption) *Strategy {
-	return newStrategy(StrategyRestForOne, opts...)
-}
-
-func newStrategy(strategyType StrategyType, opts ...StrategyOption) *Strategy {
+// NewStrategy returns a new supervision strategy.
+func NewStrategy(strategyType StrategyType, opts ...StrategyOption) *Strategy {
 	s := &Strategy{
 		typ:         strategyType,
-		maxRestarts: DefaultMaxRestarts,
-		period:      DefaultPeriod,
+		maxRestarts: defaultMaxRestarts,
+		period:      defaultPeriod,
 	}
 	for _, opt := range opts {
 		opt(s)
