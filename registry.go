@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	// DefaultRegistrySize is the default initial size for the registry.
-	DefaultRegistrySize = 1024
+	// defaultRegistrySize is the default initial size for the registry.
+	defaultRegistrySize = 1024
 
 	// registrySizeEnvVar can be used to provide a custom value for the Registry.
 	registrySizeEnvVar = "GOACTOR_PROCESSES_REGISTRY_SIZE"
@@ -28,7 +28,7 @@ type registry struct {
 var processRegistry *registry
 
 func init() {
-	size := DefaultRegistrySize
+	size := defaultRegistrySize
 	if sizeEnvVar := strings.TrimSpace(os.Getenv(registrySizeEnvVar)); sizeEnvVar != "" {
 		s, err := strconv.Atoi(sizeEnvVar)
 		if err != nil {
