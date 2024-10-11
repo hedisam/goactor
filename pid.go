@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,172 +29,73 @@ type receiver interface {
 	Close()
 }
 
-type relationType int
-
-const (
-	relNone = iota
-	relLinked
-	relLinkedTrapExit
-	relMonitored
-	relMonitor
-)
-
 // PID or ProcessID implements methods required to interact with an ActorHandler.
 type PID struct {
 	id         string
 	dispatcher dispatcher
-	r          receiver
+	receiver   receiver
+	relations  *relationsManager
+	trapExit   atomic.Bool
 	// SystemPID has to be exported to be accessible from the supervision package
 	SystemPID *syspid.PID
-
-	relationsMu   sync.RWMutex
-	links         map[string]*PID
-	trapExitLinks map[string]struct{}
-	monitored     map[string]*PID
-	monitors      map[string]*PID
-}
-
-// PID returns the self PID. It implements the ProcessIdentifier interface.
-func (pid *PID) PID() *PID {
-	return pid
-}
-
-// ID returns the ID of this PID.
-func (pid *PID) ID() string {
-	return pid.id
 }
 
 func newPID(r receiver, d dispatcher) *PID {
-	id := uuid.NewString()
 	return &PID{
-		id:            id,
-		dispatcher:    d,
-		r:             r,
-		SystemPID:     syspid.New(d),
-		links:         map[string]*PID{},
-		monitors:      map[string]*PID{},
-		monitored:     map[string]*PID{},
-		trapExitLinks: map[string]struct{}{},
+		id:         uuid.NewString(),
+		dispatcher: d,
+		receiver:   r,
+		SystemPID:  syspid.New(d),
+		relations:  newRelationsManager(),
 	}
+}
+
+// PID returns the self PID. It implements the ProcessIdentifier interface.
+func (p *PID) PID() *PID {
+	return p
+}
+
+// ID returns the ID of this PID.
+func (p *PID) ID() string {
+	return p.id
+}
+
+// SetTrapExit sets trap exit. If set to true, terminating linked actors won't cascade to this actor and only
+// the exit message will be received and processed.
+func (p *PID) SetTrapExit(trapExit bool) {
+	p.trapExit.Store(trapExit)
 }
 
 // String returns the ID. It implements the Stringer interface.
-func (pid *PID) String() string {
-	return fmt.Sprintf("pid@%s", pid.id)
+func (p *PID) String() string {
+	return fmt.Sprintf("pid@%s", p.id)
 }
 
 // Link creates a bidirectional relationship between the two actors.
-func (pid *PID) Link(to *PID, trapExit bool) {
-	to.addLink(pid)
-
-	pid.relationsMu.Lock()
-	defer pid.relationsMu.Unlock()
-	pid.links[to.id] = to
-	if trapExit {
-		pid.trapExitLinks[to.id] = struct{}{}
-	}
+func (p *PID) Link(pid *PID) {
+	pid.relations.Add(p, relationLinked)
+	p.relations.Add(pid, relationLinked)
 }
 
-func (pid *PID) addLink(from *PID) {
-	pid.relationsMu.Lock()
-	defer pid.relationsMu.Unlock()
-	pid.links[from.id] = from
+func (p *PID) Unlink(pid *PID) {
+	pid.relations.Remove(p.ID(), relationLinked)
+	p.relations.Remove(pid.ID(), relationLinked)
 }
 
-func (pid *PID) Unlink(from *PID) {
-	from.removeLink(pid)
-
-	pid.relationsMu.Lock()
-	defer pid.relationsMu.Unlock()
-	delete(pid.links, from.id)
+func (p *PID) Monitor(pid *PID) {
+	pid.relations.Add(p, relationMonitor)
+	p.relations.Add(pid, relationMonitored)
 }
 
-func (pid *PID) removeLink(from *PID) {
-	pid.relationsMu.Lock()
-	defer pid.relationsMu.Unlock()
-	delete(pid.links, from.id)
+func (p *PID) Demonitor(pid *PID) {
+	pid.relations.Remove(p.ID(), relationMonitor)
+	p.relations.Remove(pid.ID(), relationMonitored)
 }
 
-func (pid *PID) Monitor(who *PID) {
-	who.addMonitor(pid)
-
-	pid.relationsMu.Lock()
-	defer pid.relationsMu.Unlock()
-	pid.monitored[who.id] = who
-}
-
-func (pid *PID) addMonitor(m *PID) {
-	pid.relationsMu.Lock()
-	defer pid.relationsMu.Unlock()
-
-	pid.monitors[m.id] = m
-}
-
-func (pid *PID) Demonitor(who *PID) {
-	who.removeMonitor(pid)
-
-	pid.relationsMu.Lock()
-	defer pid.relationsMu.Unlock()
-	delete(pid.monitored, who.id)
-}
-
-func (pid *PID) removeMonitor(m *PID) {
-	pid.relationsMu.Lock()
-	defer pid.relationsMu.Unlock()
-
-	delete(pid.monitors, m.id)
-}
-
-func (pid *PID) relation(id string) relationType {
-	pid.relationsMu.RLock()
-	defer pid.relationsMu.RUnlock()
-
-	_, ok := pid.links[id]
-	if ok {
-		_, ok = pid.trapExitLinks[id]
-		if ok {
-			return relLinkedTrapExit
-		}
-		return relLinked
-	}
-	_, ok = pid.monitored[id]
-	if ok {
-		return relMonitored
-	}
-	_, ok = pid.monitors[id]
-	if ok {
-		return relMonitor
-	}
-	return relNone
-}
-
-func (pid *PID) removeRelation(id string, rel relationType) {
-	if rel == relNone {
-		return
-	}
-
-	pid.relationsMu.Lock()
-	defer pid.relationsMu.Unlock()
-
-	switch rel {
-	case relLinked:
-		delete(pid.links, id)
-	case relLinkedTrapExit:
-		delete(pid.links, id)
-		delete(pid.trapExitLinks, id)
-	case relMonitored:
-		delete(pid.monitored, id)
-	case relMonitor:
-		delete(pid.monitors, id)
-	default:
-		return
-	}
-}
-
-func (pid *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
+func (p *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
 	afterTimeout, afterFunc := actor.AfterFunc()
 	for {
-		msg, isSysMsg, err := pid.r.ReceiveTimeout(ctx, afterTimeout)
+		msg, isSysMsg, err := p.receiver.ReceiveTimeout(ctx, afterTimeout)
 		if err != nil {
 			switch {
 			case errors.Is(err, mailbox.ErrReceiveTimeout):
@@ -218,7 +119,7 @@ func (pid *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
 			if !ok {
 				return nil, fmt.Errorf("non system message received to be handled by system message handler: %T", msg)
 			}
-			delegate, err := pid.handleSystemMessage(sysMsg)
+			delegate, err := p.handleSystemMessage(sysMsg)
 			if err != nil {
 				return sysMsg, fmt.Errorf("handle system message: %w", err)
 			}
@@ -241,40 +142,34 @@ func (pid *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
 	return nil, nil
 }
 
-// todo: review this
-func (pid *PID) handleSystemMessage(msg *sysmsg.Message) (delegate bool, err error) {
-	rel := pid.relation(msg.SenderID)
-	if rel == relNone {
-		// a message is received and no relation was found with the sender? then why did we get a sys message from them?
-		// previously linked, died and restarted by supervisor without refreshing relations for this actor?
-		// or used to be related but relation is deleted only on this actor's side? should we delegate?
+func (p *PID) handleSystemMessage(msg *sysmsg.Message) (delegate bool, err error) {
+	relations := p.relations.Relations(msg.SenderID)
+	if len(relations) == 0 {
 		return false, nil
 	}
 
+	p.relations.Purge(msg.SenderID)
+	trapExit := p.trapExit.Load()
+
 	switch {
-	case msg.Type == sysmsg.NormalExit && equalsAny(rel, relLinkedTrapExit, relLinked, relMonitored):
-		pid.removeRelation(msg.SenderID, rel)
+	case slices.Contains(relations, relationLinked):
+		switch {
+		case trapExit:
+			return true, nil
+		case msg.Type == sysmsg.NormalExit:
+			return false, nil
+		default:
+			return false, fmt.Errorf("linked actor %q received %q message", msg.SenderID, msg.Type)
+		}
+	case slices.Contains(relations, relationMonitored):
 		return true, nil
-	case msg.Type == sysmsg.AbnormalExit && equalsAny(rel, relLinkedTrapExit, relMonitored):
-		pid.removeRelation(msg.SenderID, rel)
-		return true, nil
-	case msg.Type == sysmsg.AbnormalExit && rel == relLinked:
-		pid.removeRelation(msg.SenderID, rel)
-		return false, fmt.Errorf("linked actor %q exited abnormally", msg.SenderID)
-	case rel == relMonitor && msg.Type == sysmsg.NormalExit || msg.Type == sysmsg.AbnormalExit:
-		pid.removeRelation(msg.SenderID, relMonitor)
-		return false, nil
-	case msg.Type == sysmsg.Kill:
-		panic(fmt.Sprintf("kill msg not implemented; received from %q", msg.SenderID))
-	case msg.Type == sysmsg.Shutdown:
-		panic(fmt.Sprintf("shutdown msg not implemented; received from %q", msg.SenderID))
 	default:
-		return false, fmt.Errorf("system message with unknown type %q and/or relation %q received", msg.Type, rel)
+		return false, nil
 	}
 }
 
-func (pid *PID) dispose(ctx context.Context, origin *sysmsg.Message, err error, recovered any) {
-	pid.r.Close()
+func (p *PID) dispose(ctx context.Context, origin *sysmsg.Message, err error, recovered any) {
+	p.receiver.Close()
 
 	reason := any("normal exit")
 	typ := sysmsg.NormalExit
@@ -289,19 +184,19 @@ func (pid *PID) dispose(ctx context.Context, origin *sysmsg.Message, err error, 
 	}
 
 	logger.Debug("Actor is getting disposed, notifying related actors",
-		slog.String("actor", pid.ID()),
+		slog.String("actor", p.ID()),
 		slog.String("exit_type", string(typ)),
 		"reason", reason,
 	)
-	pid.notifyRelations(ctx, &sysmsg.Message{
-		SenderID: pid.ID(),
+	p.notifyRelations(ctx, &sysmsg.Message{
+		SenderID: p.ID(),
 		Reason:   reason,
 		Type:     typ,
 		Origin:   origin,
 	})
 }
 
-func (pid *PID) notifyRelations(ctx context.Context, msg *sysmsg.Message) {
+func (p *PID) notifyRelations(ctx context.Context, msg *sysmsg.Message) {
 	var ctxCancels []func()
 	defer func() {
 		for _, fn := range ctxCancels {
@@ -316,41 +211,17 @@ func (pid *PID) notifyRelations(ctx context.Context, msg *sysmsg.Message) {
 		return syspid.Send(ctx, who.SystemPID, msg)
 	}
 
-	pid.relationsMu.Lock()
-	defer pid.relationsMu.Unlock()
+	p.relations.mu.Lock()
+	defer p.relations.mu.Unlock()
 
-	for _, linked := range pid.links {
-		err := notify(linked)
+	for _, related := range p.relations.idToPID {
+		err := notify(related)
 		if err != nil {
-			logger.Warn("Could not notify linked actor about exit status",
+			logger.Warn("Could not notify related actor about exit status",
 				"error", err,
-				"actor", pid.ID(),
-				"linked_actor", linked.ID(),
+				"actor", p.ID(),
+				"related_actor", related.ID(),
 			)
 		}
 	}
-	for _, monitor := range pid.monitors {
-		err := notify(monitor)
-		if err != nil {
-			logger.Warn("Could not notify monitor actor about exit status",
-				"error", err,
-				"actor", pid.ID(),
-				"monitor_actor", monitor.ID(),
-			)
-		}
-	}
-	// let monitored actors know we exit, so they can remove this actor from their monitors list
-	for _, monitored := range pid.monitored {
-		err := notify(monitored)
-		logger.Warn("Could not notify monitored actor about exit status",
-			"error", err,
-			"actor", pid.ID(),
-			"monitor_actor", monitored.ID(),
-		)
-	}
-}
-
-// equalsAny checks if `v` is equal to any of the provided values in the slice `s`.
-func equalsAny[T comparable](v T, s ...T) bool {
-	return slices.Contains(s, v)
 }
