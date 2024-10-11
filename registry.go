@@ -1,8 +1,10 @@
 package goactor
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,6 +44,14 @@ func init() {
 
 // Register associates a PID with the given name.
 func Register(name string, pid ProcessIdentifier) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("cannot register empty name")
+	}
+	if pid == nil {
+		return errors.New("cannot register nil pid")
+	}
+
 	processRegistry.mu.Lock()
 	defer processRegistry.mu.Unlock()
 
@@ -59,10 +69,20 @@ func Register(name string, pid ProcessIdentifier) error {
 }
 
 // Unregister disassociates a PID from the given name.
-func Unregister(name string) {
+func Unregister(names ...string) {
+	if len(names) == 0 {
+		return
+	}
+
 	processRegistry.mu.Lock()
 	defer processRegistry.mu.Unlock()
 
+	for name := range slices.Values(names) {
+		unregister(name)
+	}
+}
+
+func unregister(name string) {
 	pid, ok := processRegistry.nameToPID[name]
 	if !ok {
 		return

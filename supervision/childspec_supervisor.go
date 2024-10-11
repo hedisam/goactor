@@ -14,20 +14,23 @@ var _ ChildSpec = &SupervisorChildSpec{}
 
 // SupervisorChildSpec holds the configuration for spawning a supervisor child spec.
 type SupervisorChildSpec struct {
-	name     string
-	children []ChildSpec
-	strategy Strategy
+	name            string
+	children        []ChildSpec
+	restartStrategy RestartStrategy
+	strategy        *Strategy
 }
 
 // NewSupervisorChildSpec returns a new Supervisor child spec.
-func NewSupervisorChildSpec(name string, strategy Strategy, children ...ChildSpec) *SupervisorChildSpec {
+func NewSupervisorChildSpec(name string, strategy *Strategy, restartStrategy RestartStrategy, children ...ChildSpec) *SupervisorChildSpec {
 	return &SupervisorChildSpec{
-		name:     strings.TrimSpace(name),
-		children: children,
-		strategy: strategy,
+		name:            strings.TrimSpace(name),
+		children:        children,
+		restartStrategy: restartStrategy,
+		strategy:        strategy,
 	}
 }
 
+// Name returns this supervisor's name.
 func (s *SupervisorChildSpec) Name() string {
 	return s.name
 }
@@ -40,6 +43,7 @@ func (s *SupervisorChildSpec) StartLink(ctx context.Context) (*goactor.PID, erro
 	}
 
 	supervisor := &Supervisor{
+		name:        s.name,
 		strategy:    s.strategy,
 		nameToChild: nameToChild,
 	}
@@ -51,6 +55,11 @@ func (s *SupervisorChildSpec) StartLink(ctx context.Context) (*goactor.PID, erro
 	}
 
 	return pid, nil
+}
+
+// RestartStrategy returns the restart strategy set for this child.
+func (s *SupervisorChildSpec) RestartStrategy() RestartStrategy {
+	return s.restartStrategy
 }
 
 func (s *SupervisorChildSpec) validateChildSpec() error {

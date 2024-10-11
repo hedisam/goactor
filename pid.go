@@ -191,7 +191,7 @@ func (pid *PID) removeRelation(id string, rel relationType) {
 	}
 }
 
-func (pid *PID) run(ctx context.Context, actor Actor) (sysMsg *sysmsg.Message, err error) {
+func (pid *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
 	afterTimeout, afterFunc := actor.AfterFunc()
 	for {
 		msg, isSysMsg, err := pid.r.ReceiveTimeout(ctx, afterTimeout)
@@ -211,6 +211,7 @@ func (pid *PID) run(ctx context.Context, actor Actor) (sysMsg *sysmsg.Message, e
 				return nil, fmt.Errorf("receive incoming messages with timeout: %w", err)
 			}
 		}
+		var sysMsg *sysmsg.Message
 		if isSysMsg {
 			var ok bool
 			sysMsg, ok = sysmsg.ToSystemMessage(msg)
@@ -228,7 +229,7 @@ func (pid *PID) run(ctx context.Context, actor Actor) (sysMsg *sysmsg.Message, e
 		loop, err := actor.Receive(ctx, msg)
 		if err != nil {
 			if isSysMsg {
-				return sysMsg, fmt.Errorf("msg handler: %w", err)
+				return sysMsg, fmt.Errorf("msg handler with sys message: %w", err)
 			}
 			return nil, fmt.Errorf("msg handler: %w", err)
 		}

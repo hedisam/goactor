@@ -3,6 +3,7 @@ package supervision
 import (
 	"fmt"
 	"slices"
+	"time"
 )
 
 // StrategyType determines how the supervisor restarts child actors.
@@ -21,23 +22,25 @@ const (
 	StrategyRestForOne StrategyType = ":rest_for_one"
 )
 
-// Default values for restart strategy.
+// Default values for supervision restart strategy.
 const (
 	DefaultMaxRestarts uint = 3
-	DefaultPeriod      uint = 5
+	DefaultPeriod           = time.Second * 5
 )
 
-type StrategyOption func(s Strategy)
+type StrategyOption func(s *Strategy)
 
 func StrategyWithMaxRestarts(maxRestarts uint) StrategyOption {
-	return func(s Strategy) {
+	return func(s *Strategy) {
 		s.maxRestarts = maxRestarts
 	}
 }
 
-func StrategyWithPeriod(period uint) StrategyOption {
-	return func(s Strategy) {
-		s.period = period
+func StrategyWithPeriod(duration time.Duration) StrategyOption {
+	return func(s *Strategy) {
+		if duration > 0 {
+			s.period = duration
+		}
 	}
 }
 
@@ -46,26 +49,26 @@ func StrategyWithPeriod(period uint) StrategyOption {
 type Strategy struct {
 	typ         StrategyType
 	maxRestarts uint
-	period      uint
+	period      time.Duration
 }
 
 // OneForOneStrategy returns a StrategyOneForOne supervision strategy.
-func OneForOneStrategy(opts ...StrategyOption) Strategy {
+func OneForOneStrategy(opts ...StrategyOption) *Strategy {
 	return newStrategy(StrategyOneForOne, opts...)
 }
 
 // OneForAllStrategy returns a StrategyOneForAll supervision strategy.
-func OneForAllStrategy(opts ...StrategyOption) Strategy {
+func OneForAllStrategy(opts ...StrategyOption) *Strategy {
 	return newStrategy(StrategyOneForAll, opts...)
 }
 
 // RestForOneStrategy returns a StrategyRestForOne supervision strategy.
-func RestForOneStrategy(opts ...StrategyOption) Strategy {
+func RestForOneStrategy(opts ...StrategyOption) *Strategy {
 	return newStrategy(StrategyRestForOne, opts...)
 }
 
-func newStrategy(strategyType StrategyType, opts ...StrategyOption) Strategy {
-	s := Strategy{
+func newStrategy(strategyType StrategyType, opts ...StrategyOption) *Strategy {
+	s := &Strategy{
 		typ:         strategyType,
 		maxRestarts: DefaultMaxRestarts,
 		period:      DefaultPeriod,
@@ -76,7 +79,7 @@ func newStrategy(strategyType StrategyType, opts ...StrategyOption) Strategy {
 	return s
 }
 
-func validateSupervisionStrategy(s Strategy) error {
+func validateSupervisionStrategy(s *Strategy) error {
 	validStrategyTypes := []StrategyType{StrategyOneForOne, StrategyOneForAll, StrategyRestForOne}
 	if !slices.Contains(validStrategyTypes, s.typ) {
 		return fmt.Errorf("invalid restart strategy type %q, valid strategies are: %q", s.typ, validStrategyTypes)
