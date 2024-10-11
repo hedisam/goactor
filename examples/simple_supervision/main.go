@@ -10,15 +10,15 @@ import (
 
 	"github.com/hedisam/goactor"
 	"github.com/hedisam/goactor/supervision"
+	"github.com/hedisam/goactor/supervision/strategy"
 )
 
 func main() {
 	err := supervision.StartSupervisor(
 		context.Background(),
-		supervision.NewStrategy(
-			supervision.StrategyOneForOne,
-			supervision.StrategyWithPeriod(time.Millisecond*500),
-			supervision.StrategyWithMaxRestarts(2),
+		strategy.NewOneForOne(
+			strategy.WithPeriod(time.Millisecond*500),
+			strategy.WithMaxRestarts(2),
 		),
 		supervision.NewActorChildSpec(
 			":alice",

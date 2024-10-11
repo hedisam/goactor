@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/hedisam/goactor"
+	"github.com/hedisam/goactor/supervision/strategy"
 )
 
 var _ ChildSpec = &SupervisorChildSpec{}
@@ -17,11 +18,11 @@ type SupervisorChildSpec struct {
 	name            string
 	children        []ChildSpec
 	restartStrategy RestartStrategy
-	strategy        *Strategy
+	strategy        Strategy
 }
 
 // NewSupervisorChildSpec returns a new Supervisor child spec.
-func NewSupervisorChildSpec(name string, strategy *Strategy, restartStrategy RestartStrategy, children ...ChildSpec) *SupervisorChildSpec {
+func NewSupervisorChildSpec(name string, strategy Strategy, restartStrategy RestartStrategy, children ...ChildSpec) *SupervisorChildSpec {
 	return &SupervisorChildSpec{
 		name:            strings.TrimSpace(name),
 		children:        children,
@@ -69,7 +70,8 @@ func (s *SupervisorChildSpec) validateChildSpec() error {
 	if len(s.children) == 0 {
 		return fmt.Errorf("no child spec provided for supervisor %q", s.name)
 	}
-	err := validateSupervisionStrategy(s.strategy)
+
+	err := validateStrategy(s.strategy)
 	if err != nil {
 		return fmt.Errorf("invalid supervision strategy: %w", err)
 	}
@@ -84,6 +86,21 @@ func (s *SupervisorChildSpec) validateChildSpec() error {
 			return fmt.Errorf("validate child %q: %w", child.Name(), err)
 		}
 		seen[child.Name()] = struct{}{}
+	}
+	return nil
+}
+
+func validateStrategy(s Strategy) error {
+	validTypes := []strategy.Type{
+		strategy.OneForOne,
+		strategy.OneForAll,
+		strategy.RestForOne,
+	}
+	if !slices.Contains(validTypes, s.Type()) {
+		return fmt.Errorf("invalid restart strategy type %q, valid strategies are: %q", s.Type(), validTypes)
+	}
+	if s.Period() < 1 {
+		return fmt.Errorf("invalid restarts period %d, period must be greater than 0", s.Period())
 	}
 	return nil
 }

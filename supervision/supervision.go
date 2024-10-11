@@ -3,10 +3,12 @@ package supervision
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/hedisam/goactor"
+	"github.com/hedisam/goactor/supervision/strategy"
 )
 
 // ChildSpec defines the specifications for the supervisor children which can be either a child actor or
@@ -22,8 +24,15 @@ type ChildSpec interface {
 	validateChildSpec() error
 }
 
+// Strategy defines the methods required for representing a supervision Strategy.
+type Strategy interface {
+	Type() strategy.Type
+	MaxRestarts() uint
+	Period() time.Duration
+}
+
 // StartSupervisor starts a supervisor for the provided specs.
-func StartSupervisor(ctx context.Context, strategy *Strategy, specs ...ChildSpec) error {
+func StartSupervisor(ctx context.Context, strategy Strategy, specs ...ChildSpec) error {
 	name := fmt.Sprintf("supervisor:parent:%s", uuid.NewString())
 	supervisorSpec := NewSupervisorChildSpec(name, strategy, RestartNever, specs...)
 	err := supervisorSpec.validateChildSpec()

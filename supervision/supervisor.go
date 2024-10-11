@@ -10,6 +10,7 @@ import (
 
 	"github.com/hedisam/goactor"
 	"github.com/hedisam/goactor/internal/ringbuffer"
+	"github.com/hedisam/goactor/supervision/strategy"
 	"github.com/hedisam/goactor/sysmsg"
 )
 
@@ -28,7 +29,7 @@ type activeChildInfo struct {
 type Supervisor struct {
 	self     *goactor.PID
 	name     string
-	strategy *Strategy
+	strategy Strategy
 	// nameToChild holds the raw ChildSpec information which is immutable.
 	nameToChild map[string]ChildSpec
 
@@ -41,7 +42,7 @@ func (s *Supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
 	goactor.GetLogger().Debug("Initialising supervisor", slog.String("name", s.name))
 	s.self = self
 	s.idToActiveChild = make(map[string]*activeChildInfo, len(s.nameToChild))
-	s.restarts = ringbuffer.New[time.Time](s.strategy.maxRestarts)
+	s.restarts = ringbuffer.New[time.Time](s.strategy.MaxRestarts())
 
 	defer func() {
 		if err != nil {
@@ -90,12 +91,14 @@ func (s *Supervisor) Receive(ctx context.Context, message any) (loop bool, err e
 		return false, err
 	}
 
-	switch s.strategy.typ {
-	case StrategyOneForOne:
+	switch s.strategy.Type() {
+	case strategy.OneForOne:
 		err = s.restartChild(ctx, info.spec)
 		if err != nil {
 			return false, fmt.Errorf("restart child: %w", err)
 		}
+	default:
+		return false, fmt.Errorf("unknown strategy type: %s", s.strategy.Type())
 	}
 
 	return true, nil
@@ -129,7 +132,7 @@ func (s *Supervisor) restartChild(ctx context.Context, child ChildSpec) error {
 }
 
 func (s *Supervisor) canRestartChild() bool {
-	if s.strategy.maxRestarts == 0 {
+	if s.strategy.MaxRestarts() == 0 {
 		return false
 	}
 
@@ -137,7 +140,7 @@ func (s *Supervisor) canRestartChild() bool {
 	if !ok {
 		return true
 	}
-	if time.Since(firstRestart) <= s.strategy.period && s.restarts.Size() == s.strategy.maxRestarts {
+	if time.Since(firstRestart) <= s.strategy.Period() && s.restarts.Size() == s.strategy.MaxRestarts() {
 		return false
 	}
 
