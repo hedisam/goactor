@@ -1,7 +1,6 @@
 package mailbox
 
 import (
-	"context"
 	"errors"
 )
 
@@ -17,6 +16,3 @@ var (
 	// ErrReceiveTimeout is returned when timeout occurs while listening for incoming messages
 	ErrReceiveTimeout = errors.New("receive timeout")
 )
-
-type MsgHandler = func(ctx context.Context, msg any) (loop bool, err error)
-type AfterFunc = func(ctx context.Context) error

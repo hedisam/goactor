@@ -3,7 +3,7 @@ package supervision
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -48,7 +48,7 @@ func (s *SupervisorChildSpec) StartLink(ctx context.Context) (*goactor.PID, erro
 		nameToChild: nameToChild,
 	}
 
-	log.Printf("Starting supervisor %q", s.name)
+	goactor.GetLogger().Debug("Starting supervisor", slog.String("supervisor_name", s.name))
 	pid, err := goactor.Spawn(ctx, supervisor)
 	if err != nil {
 		return nil, fmt.Errorf("spawn supervisor actor %q: %w", s.name, err)

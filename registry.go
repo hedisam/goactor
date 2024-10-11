@@ -3,6 +3,7 @@ package goactor
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"strconv"
@@ -27,13 +28,20 @@ type registry struct {
 
 var processRegistry *registry
 
-func init() {
-	size := defaultRegistrySize
+func initRegistry() {
+	var size int
 	if sizeEnvVar := strings.TrimSpace(os.Getenv(registrySizeEnvVar)); sizeEnvVar != "" {
 		s, err := strconv.Atoi(sizeEnvVar)
 		if err != nil {
-			size = s
+			logger.Warn(
+				"Could not convert registry size env var value to int, using the default value",
+				"error", err,
+				slog.String("env_var", registrySizeEnvVar),
+				slog.Int("default_registry_size", defaultRegistrySize),
+			)
+			s = defaultRegistrySize
 		}
+		size = s
 	}
 
 	processRegistry = &registry{

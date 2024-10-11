@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -15,6 +15,10 @@ import (
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	alice := newPanicActor("Alice")
+	bob := newPanicActor("Bob")
+
 	err := supervision.StartSupervisor(ctx,
 		supervision.OneForOneStrategy(),
 		supervision.NewSupervisorChildSpec(
@@ -22,14 +26,14 @@ func main() {
 			supervision.OneForOneStrategy(),
 			supervision.RestartAlways,
 			supervision.NewActorChildSpec(
-				"alice-1",
+				"Alice",
 				supervision.RestartAlways,
-				goactor.NewActor(newAliceActor("alice-1").Receive),
+				goactor.NewActor(alice.Receive, goactor.WithInitFunc(alice.Init)),
 			),
 			supervision.NewActorChildSpec(
-				"alice-2",
+				"Bob",
 				supervision.RestartAlways,
-				goactor.NewActor(newAliceActor("alice-2").Receive),
+				goactor.NewActor(bob.Receive, goactor.WithInitFunc(bob.Init)),
 			),
 		),
 	)
@@ -40,16 +44,16 @@ func main() {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		t := time.NewTicker(500 * time.Millisecond)
+		t := time.NewTicker(100 * time.Millisecond)
 		defer t.Stop()
 		defer wg.Done()
 		for {
 			select {
 			case <-t.C:
-				err = goactor.Send(context.Background(), goactor.NamedPID("alice-1"), "hi there")
+				err = goactor.Send(ctx, goactor.NamedPID("Alice"), "hi there")
 				if err != nil {
 					if errors.Is(err, goactor.ErrActorNotFound) {
-						log.Println("actor not found")
+						fmt.Println("[!] Actor 'Alice' not found; parent supervisor exited since child supervisor got restarted too many times")
 						return
 					}
 					panic(err)
@@ -59,16 +63,45 @@ func main() {
 	}()
 
 	wg.Wait()
+
+	err = goactor.Send(ctx, goactor.NamedPID("Bob"), "Hey Bob, you there?")
+	if err != nil {
+		if errors.Is(err, goactor.ErrActorNotFound) {
+			fmt.Println("[!] Bob is not available either")
+			return
+		}
+		panic(err)
+	}
 }
 
-type aliceActor struct {
+type panicActor struct {
 	name string
 }
 
-func newAliceActor(name string) *aliceActor {
-	return &aliceActor{name: name}
+func newPanicActor(name string) *panicActor {
+	return &panicActor{name: name}
 }
 
-func (a *aliceActor) Receive(ctx context.Context, msg any) (loop bool, err error) {
-	panic(fmt.Sprintf("alice %q received msg: %v", a.name, msg))
+func (a *panicActor) Receive(_ context.Context, msg any) (loop bool, err error) {
+	switch a.name {
+	case "Alice":
+		fmt.Println("Alice received message; PANIC")
+		panic(msg)
+	case "Bob":
+		fmt.Println("Bob received msg:", msg)
+	default:
+		fmt.Printf("Unknown actor %q received message: %v\n", a.name, msg)
+		os.Exit(1)
+	}
+	return true, nil
+}
+
+func (a *panicActor) Init(context.Context, *goactor.PID) error {
+	switch a.name {
+	case "Alice":
+		fmt.Println("Alice initialised")
+	case "Bob":
+		fmt.Println("Bob initialised. If not first init, then the child supervisor has been restarted!")
+	}
+	return nil
 }

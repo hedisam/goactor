@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"time"
 
 	"github.com/hedisam/goactor"
 	"github.com/hedisam/goactor/internal/ringbuffer"
-	"github.com/hedisam/goactor/internal/syspid"
 	"github.com/hedisam/goactor/sysmsg"
 )
 
@@ -39,7 +38,7 @@ type Supervisor struct {
 
 // Init initialises the supervisor by spawning all the children.
 func (s *Supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
-	log.Printf("Initialising supervisor %q", s.name)
+	goactor.GetLogger().Debug("Initialising supervisor", slog.String("name", s.name))
 	s.self = self
 	s.idToActiveChild = make(map[string]*activeChildInfo, len(s.nameToChild))
 	s.restarts = ringbuffer.New[time.Time](s.strategy.maxRestarts)
@@ -61,7 +60,6 @@ func (s *Supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
 
 // Receive processes received system messages from its children.
 func (s *Supervisor) Receive(ctx context.Context, message any) (loop bool, err error) {
-	fmt.Printf("[!] Supervisor %q received: %v\n", s.name, message)
 	msg, ok := sysmsg.ToSystemMessage(message)
 	if !ok {
 		return true, nil
@@ -69,14 +67,19 @@ func (s *Supervisor) Receive(ctx context.Context, message any) (loop bool, err e
 
 	info, ok := s.idToActiveChild[msg.SenderID]
 	if !ok {
-		log.Printf("Supervisor %q received system message from an unknown actor %q", s.name, msg.SenderID)
+		goactor.GetLogger().Debug("Supervisor received system message from an unknown actor",
+			slog.String("supervisor_name", s.name),
+			slog.String("actor_id", msg.SenderID),
+		)
 		return true, nil
 	}
 
 	s.unregisterChild(info)
 	if !s.shouldRestartChild(info.spec, msg.Type) {
 		if len(s.idToActiveChild) == 0 {
-			log.Printf("[!] Shutting down supervisor %q as no children are active anymore", s.name)
+			goactor.GetLogger().Debug("Shutting down supervisor as no children are active anymore",
+				slog.String("supervisor_name", s.name),
+			)
 			return false, nil
 		}
 	}
@@ -185,22 +188,5 @@ func (s *Supervisor) cancelAll(err error) {
 	for info := range maps.Values(s.idToActiveChild) {
 		s.unregisterChild(info)
 		info.ctxCancelFunc(err)
-	}
-}
-
-func (s *Supervisor) stop(ctx context.Context, err error) {
-	reason := any(":normal")
-	typ := sysmsg.NormalExit
-	if err != nil {
-		reason = err
-		typ = sysmsg.AbnormalExit
-	}
-	sendErr := syspid.Send(ctx, s.self.SystemPID, &sysmsg.Message{
-		SenderID: s.self.ID(),
-		Reason:   reason,
-		Type:     typ,
-	})
-	if err != nil {
-		log.Println("Failed to send closure system message to supervisor", s.self.ID(), sendErr)
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -241,6 +241,7 @@ func (pid *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
 	return nil, nil
 }
 
+// todo: review this
 func (pid *PID) handleSystemMessage(msg *sysmsg.Message) (delegate bool, err error) {
 	rel := pid.relation(msg.SenderID)
 	if rel == relNone {
@@ -287,6 +288,11 @@ func (pid *PID) dispose(ctx context.Context, origin *sysmsg.Message, err error, 
 		typ = sysmsg.AbnormalExit
 	}
 
+	logger.Debug("Actor is getting disposed, notifying related actors",
+		slog.String("actor", pid.ID()),
+		slog.String("exit_type", string(typ)),
+		"reason", reason,
+	)
 	pid.notifyRelations(ctx, &sysmsg.Message{
 		SenderID: pid.ID(),
 		Reason:   reason,
@@ -296,7 +302,6 @@ func (pid *PID) dispose(ctx context.Context, origin *sysmsg.Message, err error, 
 }
 
 func (pid *PID) notifyRelations(ctx context.Context, msg *sysmsg.Message) {
-	log.Printf("%q is getting disposed with system message: %+v\n", pid.id, msg)
 	var ctxCancels []func()
 	defer func() {
 		for _, fn := range ctxCancels {
@@ -304,7 +309,7 @@ func (pid *PID) notifyRelations(ctx context.Context, msg *sysmsg.Message) {
 		}
 	}()
 
-	// todo: notify concurrently via a worker pool?
+	// todo: notify concurrently via a worker pool? also, the ctx could be canceled
 	notify := func(who *PID) error {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		ctxCancels = append(ctxCancels, cancel)
@@ -317,22 +322,31 @@ func (pid *PID) notifyRelations(ctx context.Context, msg *sysmsg.Message) {
 	for _, linked := range pid.links {
 		err := notify(linked)
 		if err != nil {
-			log.Printf("%q could not notify linked actor %q of system message: %v: %+v\n", pid, linked, err, msg)
+			logger.Warn("Could not notify linked actor about exit status",
+				"error", err,
+				"actor", pid.ID(),
+				"linked_actor", linked.ID(),
+			)
 		}
 	}
 	for _, monitor := range pid.monitors {
 		err := notify(monitor)
 		if err != nil {
-			log.Printf("%q could not notify monitor actor %q of system message: %v: %+v\n", pid, monitor, err, msg)
-			continue
+			logger.Warn("Could not notify monitor actor about exit status",
+				"error", err,
+				"actor", pid.ID(),
+				"monitor_actor", monitor.ID(),
+			)
 		}
 	}
+	// let monitored actors know we exit, so they can remove this actor from their monitors list
 	for _, monitored := range pid.monitored {
 		err := notify(monitored)
-		if err != nil {
-			log.Printf("%q could not notify monitored actor %q of system message: %v: %+v\n", pid, monitored, err, msg)
-			continue
-		}
+		logger.Warn("Could not notify monitored actor about exit status",
+			"error", err,
+			"actor", pid.ID(),
+			"monitor_actor", monitored.ID(),
+		)
 	}
 }
 

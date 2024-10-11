@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/hedisam/goactor/internal/mailbox"
@@ -16,6 +18,30 @@ var (
 	// ErrNilPID is returned when trying to send a message using a nil PID
 	ErrNilPID = errors.New("cannot send message via a nil PID")
 )
+
+var (
+	logger *slog.Logger
+)
+
+func init() {
+	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
+	initRegistry()
+}
+
+// SetLogHandler can be used to set a custom (non slog) log handler for entire package.
+// You should call this function in the beginning of your program. It is not safe to call this function when you have
+// active actors or supervisors. Access to the logger is not guarded by a mutex.
+func SetLogHandler(h slog.Handler) {
+	logger = slog.New(h)
+	slog.SetDefault(logger)
+}
+
+// GetLogger can be used by internal packages to access the logger.
+func GetLogger() *slog.Logger {
+	return logger
+}
 
 // ProcessIdentifier defines a Process Identifier aka PID. It is used to communicate with an Actor.
 type ProcessIdentifier interface {
