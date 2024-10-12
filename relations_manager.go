@@ -37,10 +37,11 @@ func (m *relationsManager) Add(pid *PID, rel relationType) {
 	defer m.mu.Unlock()
 
 	rels := m.idToRelationTypes[pid.ID()]
-	rels = append(rels, rel)
-	slices.Sort(rels)
-	rels = slices.Compact(rels)
-	m.idToRelationTypes[pid.ID()] = rels
+	if idx := slices.Index(rels, rel); idx != -1 {
+		// relation already exists
+		return
+	}
+	m.idToRelationTypes[pid.ID()] = append(rels, rel)
 	m.idToPID[pid.ID()] = pid
 }
 

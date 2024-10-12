@@ -33,8 +33,7 @@ func initRegistry() {
 	if sizeEnvVar := strings.TrimSpace(os.Getenv(registrySizeEnvVar)); sizeEnvVar != "" {
 		s, err := strconv.Atoi(sizeEnvVar)
 		if err != nil {
-			logger.Warn(
-				"Could not convert registry size env var value to int, using the default value",
+			logger.Warn("Could not convert registry size env var value to int, using the default value",
 				"error", err,
 				slog.String("env_var", registrySizeEnvVar),
 				slog.Int("default_registry_size", defaultRegistrySize),

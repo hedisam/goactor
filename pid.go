@@ -52,8 +52,7 @@ type PID struct {
 	relations  *relationsManager
 	trapExit   atomic.Bool
 	disposed   atomic.Bool
-	// SystemPID has to be exported to be accessible from the supervision package
-	SystemPID *syspid.PID
+	systemPID  *syspid.PID
 }
 
 func newPID(r receiver, d dispatcher) *PID {
@@ -61,7 +60,7 @@ func newPID(r receiver, d dispatcher) *PID {
 		id:         uuid.NewString(),
 		dispatcher: d,
 		receiver:   r,
-		SystemPID:  syspid.New(d),
+		systemPID:  syspid.New(d),
 		relations:  newRelationsManager(),
 	}
 }
@@ -278,7 +277,7 @@ func (p *PID) notify(ctx context.Context, msgType sysmsg.Type, reason sysmsg.Rea
 	notify := func(who *PID) error {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		return syspid.Send(ctx, who.SystemPID, &sysmsg.Message{
+		return syspid.Send(ctx, who.systemPID, &sysmsg.Message{
 			Type:      msgType,
 			ProcessID: p.ID(),
 			Reason:    reason,
