@@ -1,29 +1,78 @@
 package sysmsg
 
-// MessageType defines the system message type.
-type MessageType string
+import "errors"
+
+// Type represents the type of system message.
+type Type string
 
 const (
-	// NormalExit is a type of system message emitted when an ActorHandler exists normally.
-	NormalExit MessageType = "system:message:exit:normal"
-	// AbnormalExit is a type of system message emitted when an ActorHandler exists abnormally.
-	AbnormalExit MessageType = "system:message:exit:abnormal"
-	// Kill todo
-	Kill MessageType = "system:message:kill"
-	// Shutdown todo
-	Shutdown MessageType = "system:message:shutdown"
+	// Down is used when a monitored process exits, regardless of the reason for its termination.
+	Down Type = ":DOWN"
+	// Exit is used when a linked process exits and trap_exit is enabled.
+	Exit Type = ":EXIT"
+	// Signal is used to signal an actor for termination.
+	Signal Type = ":signal"
 )
 
-// Message holds details about a system message.
+// Message is sent to the user-defined actor's receiver either when a monitored process exits regardless of
+// the reason or when a linked process exits and trap_exit is enabled.
 type Message struct {
-	SenderID string
-	Reason   any
-	Type     MessageType
-	Origin   *Message
+	// Type is either Down, Exit, or Signal.
+	Type Type
+	// ProcessID is the process ID of the actor that has terminated. It can be an empty string if it's a direct Signal.
+	ProcessID string
+	// Reason is the reason of termination.
+	Reason Reason
 }
 
-// ToSystemMessage is a helper to quickly check if a message is of type *Message.
-func ToSystemMessage(msg any) (sysMsg *Message, ok bool) {
-	m, ok := msg.(*Message)
-	return m, ok
+// Reason is an internal notifications about process termination or exit reasons.
+// A Signal is handled internally by an actor which may result in a Message (e.g. if linked and trapping exit messages)
+// You can use any error as Reason which will be considered an abnormal exit causing linked actors to terminate if
+// not trapping exit messages.
+type Reason error
+
+var (
+	// ReasonNormal is used when an actor exits normally. A ReasonNormal does not terminate a linked actor even if
+	// it's not trapping exit messages.
+	// An actor can trap exit ReasonNormal.
+	ReasonNormal Reason = errors.New(":normal")
+	// ReasonShutdown can be used to shut down an actor and its linked ones if they're not trapping exit messages.
+	// An actor can trap exit ReasonShutdown.
+	ReasonShutdown Reason = errors.New(":shutdown")
+	// ReasonKill can be used to immediately dispose an actor and its linked ones if they're not trapping exit messages.
+	// An actor cannot trap exit ReasonKill.
+	ReasonKill Reason = errors.New(":kill")
+)
+
+// ToMessage checks whether the message is a system *Message or not.
+func ToMessage(message any) (*Message, bool) {
+	msg, ok := message.(*Message)
+	return msg, ok
+}
+
+// MonitoredActorDown checks if a system Message is about a down monitored actor.
+func MonitoredActorDown(message any) (processID string, reason Reason, ok bool) {
+	msg, ok := ToMessage(message)
+	if !ok || msg.Type != Down {
+		return "", nil, false
+	}
+	return msg.ProcessID, msg.Reason, true
+}
+
+// LinkedActorDown checks if a system Message is about a terminated linked actor.
+func LinkedActorDown(message any) (processID string, reason Reason, ok bool) {
+	msg, ok := ToMessage(message)
+	if !ok || msg.Type != Exit {
+		return "", nil, false
+	}
+	return msg.ProcessID, msg.Reason, true
+}
+
+// IsSystemSignal checks if a system Message is a direct system Signal.
+func IsSystemSignal(message any) (reason Reason, ok bool) {
+	msg, ok := ToMessage(message)
+	if !ok || msg.Type != Signal {
+		return nil, false
+	}
+	return msg.Reason, true
 }

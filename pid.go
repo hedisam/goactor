@@ -16,6 +16,21 @@ import (
 	"github.com/hedisam/goactor/sysmsg"
 )
 
+type systemMessageAction int
+
+const (
+	systemMessageActionIgnore = iota
+	systemMessageActionPropagate
+	systemMessageActionDelegate
+)
+
+var (
+	// ErrDisposed is returned when this actor is disposed
+	ErrDisposed = errors.New("actor is disposed")
+	// ErrTargetDisposed is returned when target actor is disposed
+	ErrTargetDisposed = errors.New("target actor is disposed")
+)
+
 // dispatcher dispatches messages to the actor.
 type dispatcher interface {
 	PushMessage(ctx context.Context, msg any) error
@@ -36,6 +51,7 @@ type PID struct {
 	receiver   receiver
 	relations  *relationsManager
 	trapExit   atomic.Bool
+	disposed   atomic.Bool
 	// SystemPID has to be exported to be accessible from the supervision package
 	SystemPID *syspid.PID
 }
@@ -60,8 +76,8 @@ func (p *PID) ID() string {
 	return p.id
 }
 
-// SetTrapExit sets trap exit. If set to true, terminating linked actors won't cascade to this actor and only
-// the exit message will be received and processed.
+// SetTrapExit can be used to trap signals and exit messages from linked actors.
+// A direct sysmsg.Signal with a sysmsg.ReasonKill cannot be trapped.
 func (p *PID) SetTrapExit(trapExit bool) {
 	p.trapExit.Store(trapExit)
 }
@@ -71,25 +87,64 @@ func (p *PID) String() string {
 	return fmt.Sprintf("pid@%s", p.id)
 }
 
-// Link creates a bidirectional relationship between the two actors.
-func (p *PID) Link(pid *PID) {
+// Disposed reports whether this PID is disposed or not.
+// Disposed actors neither can be linked/monitored nor can receive messages.
+func (p *PID) Disposed() bool {
+	return p.disposed.Load()
+}
+
+// Link creates a bidirectional link between the two actors.
+// Linked actors gets notified when the other actor exits. If TrapExit is set (see SetTrapExit), the notification
+// message gets delegated to the user defined receive function otherwise the linked actor terminates as well if the
+// exit reason is anything other than sysmsg.ReasonNormal.
+func (p *PID) Link(pid *PID) error {
+	if p.Disposed() {
+		return ErrDisposed
+	}
+	if pid.Disposed() {
+		return ErrTargetDisposed
+	}
 	pid.relations.Add(p, relationLinked)
 	p.relations.Add(pid, relationLinked)
+	return nil
 }
 
-func (p *PID) Unlink(pid *PID) {
-	pid.relations.Remove(p.ID(), relationLinked)
+// Unlink removes the bidirectional link between the two actors.
+func (p *PID) Unlink(pid *PID) error {
+	if p.Disposed() {
+		return ErrDisposed
+	}
+	if !pid.Disposed() {
+		pid.relations.Remove(p.ID(), relationLinked)
+	}
 	p.relations.Remove(pid.ID(), relationLinked)
+	return nil
 }
 
-func (p *PID) Monitor(pid *PID) {
+// Monitor monitors the provided PID.
+// The user defined receive function of monitor actors receive a sysmsg.Down message when a monitored actor goes down.
+func (p *PID) Monitor(pid *PID) error {
+	if p.Disposed() {
+		return ErrDisposed
+	}
+	if pid.Disposed() {
+		return ErrTargetDisposed
+	}
 	pid.relations.Add(p, relationMonitor)
 	p.relations.Add(pid, relationMonitored)
+	return nil
 }
 
-func (p *PID) Demonitor(pid *PID) {
-	pid.relations.Remove(p.ID(), relationMonitor)
+// Demonitor de-monitors the provided PID.
+func (p *PID) Demonitor(pid *PID) error {
+	if p.Disposed() {
+		return ErrDisposed
+	}
+	if !pid.Disposed() {
+		pid.relations.Remove(p.ID(), relationMonitor)
+	}
 	p.relations.Remove(pid.ID(), relationMonitored)
+	return nil
 }
 
 func (p *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
@@ -112,115 +167,131 @@ func (p *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
 				return nil, fmt.Errorf("receive incoming messages with timeout: %w", err)
 			}
 		}
-		var sysMsg *sysmsg.Message
 		if isSysMsg {
-			var ok bool
-			sysMsg, ok = sysmsg.ToSystemMessage(msg)
+			sysMsg, ok := msg.(*sysmsg.Message)
 			if !ok {
-				return nil, fmt.Errorf("non system message received to be handled by system message handler: %T", msg)
+				return nil, fmt.Errorf("non system message received to be handled by system message handler: %T, %+v", msg, msg)
 			}
-			delegate, err := p.handleSystemMessage(sysMsg)
+			action, err := p.handleSystemMessage(sysMsg)
 			if err != nil {
-				return sysMsg, fmt.Errorf("handle system message: %w", err)
+				return nil, fmt.Errorf("handle system message: %w", err)
 			}
-			if !delegate {
+			switch action {
+			case systemMessageActionPropagate:
+				return sysMsg, nil
+			case systemMessageActionDelegate:
+				msg = sysMsg
+			case systemMessageActionIgnore:
 				continue
 			}
 		}
+
 		loop, err := actor.Receive(ctx, msg)
 		if err != nil {
-			if isSysMsg {
-				return sysMsg, fmt.Errorf("msg handler with sys message: %w", err)
-			}
-			return nil, fmt.Errorf("msg handler: %w", err)
+			return nil, fmt.Errorf("actor receive: %w", err)
 		}
 		if !loop {
-			break
+			return nil, nil
 		}
 	}
-
-	return nil, nil
 }
 
-func (p *PID) handleSystemMessage(msg *sysmsg.Message) (delegate bool, err error) {
-	relations := p.relations.Relations(msg.SenderID)
-	if len(relations) == 0 {
-		return false, nil
-	}
-
-	p.relations.Purge(msg.SenderID)
+func (p *PID) handleSystemMessage(msg *sysmsg.Message) (systemMessageAction, error) {
 	trapExit := p.trapExit.Load()
 
-	switch {
-	case slices.Contains(relations, relationLinked):
+	switch msg.Type {
+	case sysmsg.Signal:
+		// it's a direct termination signal
+		if errors.Is(msg.Reason, sysmsg.ReasonKill) || !trapExit {
+			// a direct kill signal cannot be delegated to the user even if trap_exit is set
+			return systemMessageActionPropagate, nil
+		}
+		return systemMessageActionDelegate, nil
+	case sysmsg.Down:
+		// a monitored actor went down
+		p.relations.Remove(msg.ProcessID, relationMonitored)
+		return systemMessageActionDelegate, nil
+	case sysmsg.Exit:
+		// a linked actor reported exit for whatever reason
+		p.relations.Remove(msg.ProcessID, relationLinked)
 		switch {
 		case trapExit:
-			return true, nil
-		case msg.Type == sysmsg.NormalExit:
-			return false, nil
+			return systemMessageActionDelegate, nil
+		case errors.Is(msg.Reason, sysmsg.ReasonNormal):
+			return systemMessageActionIgnore, nil
 		default:
-			return false, fmt.Errorf("linked actor %q received %q message", msg.SenderID, msg.Type)
+			return systemMessageActionPropagate, nil
 		}
-	case slices.Contains(relations, relationMonitored):
-		return true, nil
 	default:
-		return false, nil
+		return systemMessageActionIgnore, fmt.Errorf("unknown system message type received: %+v", msg)
 	}
 }
 
-func (p *PID) dispose(ctx context.Context, origin *sysmsg.Message, err error, recovered any) {
+func (p *PID) dispose(ctx context.Context, propagate *sysmsg.Message, runErr error, recovered any) {
 	p.receiver.Close()
+	p.disposed.Store(true)
 
-	reason := any("normal exit")
-	typ := sysmsg.NormalExit
-	if err != nil {
-		reason = err
-		typ = sysmsg.AbnormalExit
+	relationTypeToPIDs := p.relations.TypeToRelatedPIDs()
+
+	monitoredActors := relationTypeToPIDs[relationMonitored]
+	for pid := range slices.Values(monitoredActors) {
+		pid.relations.Remove(p.ID(), relationMonitor)
 	}
 
-	if recovered != nil {
-		reason = recovered
-		typ = sysmsg.AbnormalExit
+	var reason sysmsg.Reason
+	switch {
+	case recovered != nil:
+		reason = fmt.Errorf("panic: %v", recovered)
+	case runErr != nil:
+		reason = fmt.Errorf("actor runtime error: %w", runErr)
+	case propagate != nil:
+		reason = propagate.Reason
+	default:
+		reason = sysmsg.ReasonNormal
 	}
 
 	logger.Debug("Actor is getting disposed, notifying related actors",
 		slog.String("actor", p.ID()),
-		slog.String("exit_type", string(typ)),
-		"reason", reason,
+		slog.String("reason", reason.Error()),
 	)
-	p.notifyRelations(ctx, &sysmsg.Message{
-		SenderID: p.ID(),
-		Reason:   reason,
-		Type:     typ,
-		Origin:   origin,
-	})
+
+	p.notify(ctx, sysmsg.Exit, reason, relationTypeToPIDs[relationLinked]...)
+	p.notify(ctx, sysmsg.Down, reason, relationTypeToPIDs[relationMonitor]...)
 }
 
-func (p *PID) notifyRelations(ctx context.Context, msg *sysmsg.Message) {
-	var ctxCancels []func()
-	defer func() {
-		for _, fn := range ctxCancels {
-			fn()
-		}
-	}()
-
-	// todo: notify concurrently via a worker pool? also, the ctx could be canceled
-	notify := func(who *PID) error {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		ctxCancels = append(ctxCancels, cancel)
-		return syspid.Send(ctx, who.SystemPID, msg)
+func (p *PID) notify(ctx context.Context, msgType sysmsg.Type, reason sysmsg.Reason, pids ...*PID) {
+	if len(pids) == 0 {
+		return
 	}
 
-	p.relations.mu.Lock()
-	defer p.relations.mu.Unlock()
+	// the actor may have been terminated due to a canceled context, therefore we need to make sure we have a
+	// non canceled context in order to be able to notify the related actors
+	select {
+	case <-ctx.Done():
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), time.Second*5)
+		defer cancel()
+	default:
+	}
 
-	for _, related := range p.relations.idToPID {
-		err := notify(related)
+	// todo: notify concurrently via a worker pool?
+	notify := func(who *PID) error {
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		return syspid.Send(ctx, who.SystemPID, &sysmsg.Message{
+			Type:      msgType,
+			ProcessID: p.ID(),
+			Reason:    reason,
+		})
+	}
+
+	for pid := range slices.Values(pids) {
+		err := notify(pid)
 		if err != nil {
-			logger.Warn("Could not notify related actor about exit status",
-				"error", err,
-				"actor", p.ID(),
-				"related_actor", related.ID(),
+			logger.Warn("Could not send termination message to related actor",
+				slog.Any("error", err),
+				slog.String("actor", p.ID()),
+				slog.String("related_actor", pid.ID()),
 			)
 		}
 	}

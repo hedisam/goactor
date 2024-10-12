@@ -73,13 +73,13 @@ func Spawn(ctx context.Context, actor Actor) (*PID, error) {
 
 	go func() {
 		var runErr error
-		var sysMsg *sysmsg.Message
+		var toPropagate *sysmsg.Message
 		defer func() {
 			r := recover()
-			pid.dispose(ctx, sysMsg, runErr, r)
+			pid.dispose(ctx, toPropagate, runErr, r)
 		}()
 
-		sysMsg, runErr = pid.run(ctx, actor)
+		toPropagate, runErr = pid.run(ctx, actor)
 	}()
 
 	return pid, nil

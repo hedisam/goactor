@@ -19,15 +19,15 @@ const (
 
 // relationsManager manages relations between actors.
 type relationsManager struct {
-	mu            sync.RWMutex
-	idToRelations map[string][]relationType
-	idToPID       map[string]*PID
+	mu                sync.RWMutex
+	idToRelationTypes map[string][]relationType
+	idToPID           map[string]*PID
 }
 
 func newRelationsManager() *relationsManager {
 	return &relationsManager{
-		idToRelations: make(map[string][]relationType),
-		idToPID:       make(map[string]*PID),
+		idToRelationTypes: make(map[string][]relationType),
+		idToPID:           make(map[string]*PID),
 	}
 }
 
@@ -36,11 +36,11 @@ func (m *relationsManager) Add(pid *PID, rel relationType) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rels := m.idToRelations[pid.ID()]
+	rels := m.idToRelationTypes[pid.ID()]
 	rels = append(rels, rel)
 	slices.Sort(rels)
 	rels = slices.Compact(rels)
-	m.idToRelations[pid.ID()] = rels
+	m.idToRelationTypes[pid.ID()] = rels
 	m.idToPID[pid.ID()] = pid
 }
 
@@ -49,7 +49,7 @@ func (m *relationsManager) Remove(id string, rel relationType) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rels := m.idToRelations[id]
+	rels := m.idToRelationTypes[id]
 	idx := slices.Index(rels, rel)
 	switch {
 	case idx == -1:
@@ -65,7 +65,7 @@ func (m *relationsManager) Remove(id string, rel relationType) {
 		return
 	}
 
-	m.idToRelations[id] = rels
+	m.idToRelationTypes[id] = rels
 }
 
 // Purge purges all the relations for the provided process ID.
@@ -76,15 +76,21 @@ func (m *relationsManager) Purge(id string) {
 }
 
 func (m *relationsManager) purge(id string) {
-	delete(m.idToRelations, id)
+	delete(m.idToRelationTypes, id)
 	delete(m.idToPID, id)
 }
 
-// Relations returns all the relations for the provided process ID.
-func (m *relationsManager) Relations(id string) []relationType {
+// TypeToRelatedPIDs returns a map of relation type to a slice *PID.
+func (m *relationsManager) TypeToRelatedPIDs() map[relationType][]*PID {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	relations, _ := m.idToRelations[id]
-	return relations
+	typeToPIDs := make(map[relationType][]*PID)
+	for id, types := range m.idToRelationTypes {
+		pid := m.idToPID[id]
+		for typ := range slices.Values(types) {
+			typeToPIDs[typ] = append(typeToPIDs[typ], pid)
+		}
+	}
+	return typeToPIDs
 }

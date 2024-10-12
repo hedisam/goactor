@@ -43,6 +43,7 @@ func (s *Supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
 	s.self = self
 	s.idToActiveChild = make(map[string]*activeChildInfo, len(s.nameToChild))
 	s.restarts = ringbuffer.New[time.Time](s.strategy.MaxRestarts())
+	s.self.SetTrapExit(true)
 
 	defer func() {
 		if err != nil {
@@ -61,22 +62,31 @@ func (s *Supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
 
 // Receive processes received system messages from its children.
 func (s *Supervisor) Receive(ctx context.Context, message any) (loop bool, err error) {
-	msg, ok := sysmsg.ToSystemMessage(message)
+	msg, ok := sysmsg.ToMessage(message)
 	if !ok {
 		return true, nil
 	}
 
-	info, ok := s.idToActiveChild[msg.SenderID]
+	switch msg.Type {
+	case sysmsg.Signal:
+		// TODO: support signal messages
+		return true, nil
+	case sysmsg.Down:
+		// a supervisor doesn't monitor actors, it gets linked to them while trapping exit messages.
+		return true, nil
+	}
+
+	info, ok := s.idToActiveChild[msg.ProcessID]
 	if !ok {
 		goactor.GetLogger().Debug("Supervisor received system message from an unknown actor",
 			slog.String("supervisor_name", s.name),
-			slog.String("actor_id", msg.SenderID),
+			slog.String("actor_id", msg.ProcessID),
 		)
 		return true, nil
 	}
 
 	s.unregisterChild(info)
-	if !s.shouldRestartChild(info.spec, msg.Type) {
+	if !s.shouldRestartChild(info.spec, msg.Reason) {
 		if len(s.idToActiveChild) == 0 {
 			goactor.GetLogger().Debug("Shutting down supervisor as no children are active anymore",
 				slog.String("supervisor_name", s.name),
@@ -111,12 +121,12 @@ func (s *Supervisor) AfterFunc() (timeout time.Duration, afterFunc goactor.After
 	}
 }
 
-func (s *Supervisor) shouldRestartChild(spec ChildSpec, msgType sysmsg.MessageType) bool {
+func (s *Supervisor) shouldRestartChild(spec ChildSpec, reason sysmsg.Reason) bool {
 	switch spec.RestartStrategy() {
 	case RestartNever:
 		return false
 	case RestartTransient:
-		return msgType != sysmsg.NormalExit && msgType != sysmsg.Shutdown
+		return !errors.Is(reason, sysmsg.ReasonNormal) && !errors.Is(reason, sysmsg.ReasonShutdown)
 	default:
 		return true
 	}
@@ -173,8 +183,11 @@ func (s *Supervisor) startChild(ctx context.Context, child ChildSpec) error {
 
 func (s *Supervisor) registerChild(info *activeChildInfo) error {
 	s.idToActiveChild[info.pid.ID()] = info
-	s.self.Link(info.pid, true)
-	err := goactor.Register(info.spec.Name(), info.pid)
+	err := s.self.Link(info.pid)
+	if err != nil {
+		return fmt.Errorf("link to child: %w", err)
+	}
+	err = goactor.Register(info.spec.Name(), info.pid)
 	if err != nil {
 		return fmt.Errorf("could not register child actor %q: %w", info.spec.Name(), err)
 	}
@@ -183,7 +196,7 @@ func (s *Supervisor) registerChild(info *activeChildInfo) error {
 
 func (s *Supervisor) unregisterChild(activeChild *activeChildInfo) {
 	goactor.Unregister(activeChild.spec.Name())
-	s.self.Unlink(activeChild.pid)
+	_ = s.self.Unlink(activeChild.pid)
 	delete(s.idToActiveChild, activeChild.pid.ID())
 }
 

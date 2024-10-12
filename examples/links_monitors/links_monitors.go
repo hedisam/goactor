@@ -12,31 +12,35 @@ import (
 
 func main() {
 	fmt.Println("----- Links & Monitors ----")
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
 	child, _ := goactor.Spawn(ctx, goactor.NewActor(func(ctx context.Context, msg any) (loop bool, err error) {
-		fmt.Printf("[!] ChildActor: %+v; Sleeping a bit then error\n", msg)
+		fmt.Printf("[ChildActor] message: %+v\n", msg)
+		fmt.Printf("[ChildActor] sleeping for 1s then will error\n")
 		time.Sleep(time.Second)
-		return false, errors.New("i'm child actor, got nothing to do so exit with an error")
+		return false, errors.New("got nothing to do so exit with an error")
 	}))
 
 	parent, _ := goactor.Spawn(ctx, goactor.NewActor(func(ctx context.Context, msg any) (loop bool, err error) {
-		_, ok := sysmsg.ToSystemMessage(msg)
-		if ok {
-			fmt.Printf("[!] ParentActor received system message: %+v\n", msg)
+		if processID, reason, ok := sysmsg.LinkedActorDown(msg); ok {
+			fmt.Printf("[ParentActor] Linked actor %q terminated with reason %q\n", processID, reason)
 			return true, nil
 		}
-		fmt.Printf("[!] ParentActor: %+v\n", msg)
+		fmt.Printf("[ParentActor] message: %+v\n", msg)
 		return true, nil
 	}))
+	parent.SetTrapExit(true)
 
-	parent.Link(child, true)
-	err := goactor.Send(ctx, child, "go to sleep")
+	err := parent.Link(child)
+	if err != nil {
+		panic(err)
+	}
+	err = goactor.Send(ctx, child, "go to sleep")
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Printf("[!] Sleeping for a bit in the main func\n")
-	time.Sleep(5 * time.Second)
-	fmt.Printf("[!] Sleeping done, exiting in main func\n")
+	<-ctx.Done()
+	fmt.Println("[!] Sleeping done, exiting in main func")
 }
