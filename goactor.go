@@ -25,8 +25,6 @@ var (
 
 func init() {
 	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
-
 	initRegistry()
 }
 
@@ -35,7 +33,6 @@ func init() {
 // active actors or supervisors. Access to the logger is not guarded by a mutex.
 func SetLogHandler(h slog.Handler) {
 	logger = slog.New(h)
-	slog.SetDefault(logger)
 }
 
 // GetLogger can be used by internal packages to access the logger.

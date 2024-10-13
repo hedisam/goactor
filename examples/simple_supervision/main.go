@@ -24,7 +24,7 @@ func main() {
 			":alice",
 			supervision.Permanent,
 			goactor.NewActor(actorAlice, goactor.WithInitFunc(func(_ context.Context, _ *goactor.PID) error {
-				fmt.Println("[!] Alice initialised")
+				log.Println("[!] Alice initialised")
 				return nil
 			})),
 		),
