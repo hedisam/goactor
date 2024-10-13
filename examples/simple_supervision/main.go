@@ -20,14 +20,16 @@ func main() {
 			strategy.WithPeriod(time.Millisecond*500),
 			strategy.WithMaxRestarts(2),
 		),
-		supervision.NewWorkerSpec(
-			":alice",
-			supervision.Permanent,
-			goactor.NewActor(actorAlice, goactor.WithInitFunc(func(_ context.Context, _ *goactor.PID) error {
-				log.Println("[!] Alice initialised")
-				return nil
-			})),
-		),
+		[]supervision.ChildSpec{
+			supervision.NewWorkerSpec(
+				":alice",
+				supervision.Permanent,
+				goactor.NewActor(actorAlice, goactor.WithInitFunc(func(_ context.Context, _ *goactor.PID) error {
+					log.Println("[!] Alice initialised")
+					return nil
+				})),
+			),
+		},
 	)
 	if err != nil {
 		log.Fatal("Could not start supervisor:", err)

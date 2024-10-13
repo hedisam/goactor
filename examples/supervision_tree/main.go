@@ -22,21 +22,25 @@ func main() {
 
 	err := supervision.Start(ctx,
 		strategy.NewOneForOne(),
-		supervision.NewSupervisorSpec(
-			"child-supervisor",
-			strategy.NewOneForOne(),
-			supervision.Permanent,
-			supervision.NewWorkerSpec(
-				"Alice",
+		[]supervision.ChildSpec{
+			supervision.NewSupervisorSpec(
+				"child-supervisor",
+				strategy.NewOneForOne(),
 				supervision.Permanent,
-				goactor.NewActor(alice.Receive, goactor.WithInitFunc(alice.Init)),
+				[]supervision.ChildSpec{
+					supervision.NewWorkerSpec(
+						"Alice",
+						supervision.Permanent,
+						goactor.NewActor(alice.Receive, goactor.WithInitFunc(alice.Init)),
+					),
+					supervision.NewWorkerSpec(
+						"Bob",
+						supervision.Permanent,
+						goactor.NewActor(bob.Receive, goactor.WithInitFunc(bob.Init)),
+					),
+				},
 			),
-			supervision.NewWorkerSpec(
-				"Bob",
-				supervision.Permanent,
-				goactor.NewActor(bob.Receive, goactor.WithInitFunc(bob.Init)),
-			),
-		),
+		},
 	)
 	if err != nil {
 		panic(err)

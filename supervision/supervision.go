@@ -25,14 +25,14 @@ type ChildSpec interface {
 }
 
 // Start starts a supervisor for the provided specs.
-func Start(ctx context.Context, strategy *strategy.Strategy, specs ...ChildSpec) error {
+func Start(ctx context.Context, strategy *strategy.Strategy, specs []ChildSpec) error {
 	err := ensureUniqueNamesInSupervisionTree(specs)
 	if err != nil {
 		return fmt.Errorf("ensure unique names in supervision tree: %w", err)
 	}
 
 	name := fmt.Sprintf("supervisor:parent:%s", uuid.NewString())
-	supervisorSpec := NewSupervisorSpec(name, strategy, Temporary, specs...)
+	supervisorSpec := NewSupervisorSpec(name, strategy, Temporary, specs)
 	err = supervisorSpec.validate()
 	if err != nil {
 		return fmt.Errorf("validate supervisor child specs: %w", err)

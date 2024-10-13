@@ -22,7 +22,7 @@ type SupervisorSpec struct {
 }
 
 // NewSupervisorSpec returns a new Supervisor child spec.
-func NewSupervisorSpec(name string, strategy *strategy.Strategy, restartType RestartType, children ...ChildSpec) *SupervisorSpec {
+func NewSupervisorSpec(name string, strategy *strategy.Strategy, restartType RestartType, children []ChildSpec) *SupervisorSpec {
 	return &SupervisorSpec{
 		name:        strings.TrimSpace(name),
 		children:    children,
