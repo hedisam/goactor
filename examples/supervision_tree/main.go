@@ -20,20 +20,20 @@ func main() {
 	alice := newPanicActor("Alice")
 	bob := newPanicActor("Bob")
 
-	err := supervision.StartSupervisor(ctx,
+	err := supervision.Start(ctx,
 		strategy.NewOneForOne(),
-		supervision.NewSupervisorChildSpec(
+		supervision.NewSupervisorSpec(
 			"child-supervisor",
 			strategy.NewOneForOne(),
-			supervision.RestartAlways,
-			supervision.NewActorChildSpec(
+			supervision.Permanent,
+			supervision.NewWorkerSpec(
 				"Alice",
-				supervision.RestartAlways,
+				supervision.Permanent,
 				goactor.NewActor(alice.Receive, goactor.WithInitFunc(alice.Init)),
 			),
-			supervision.NewActorChildSpec(
+			supervision.NewWorkerSpec(
 				"Bob",
-				supervision.RestartAlways,
+				supervision.Permanent,
 				goactor.NewActor(bob.Receive, goactor.WithInitFunc(bob.Init)),
 			),
 		),

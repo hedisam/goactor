@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"fmt"
+	"iter"
 	"slices"
 	"time"
 )
@@ -11,99 +12,31 @@ const (
 	defaultPeriod           = time.Second * 5
 )
 
-// Type represents the strategy type which determines how the supervisor restarts child actors
-// in relation to the other children.
-type Type uint
+type strategyType string
 
 const (
-	// OneForOne if a child process terminates, only that process is restarted
-	OneForOne Type = iota
+	// oneForOne If one child process terminates and is to be restarted, only that child process is affected.
+	// This is the default restart strategy.
+	oneForOne strategyType = ":one_for_one"
 
-	// OneForAll if a child process terminates, all other child processes are terminated
-	// and then all of them (including the terminated one) are restarted.
-	OneForAll
+	// oneForAll If one child process terminates and is to be restarted,
+	// all other child processes are terminated and then all child processes are restarted.
+	oneForAll strategyType = ":one_for_all"
 
-	// RestForOne if a child process terminates, the terminated child process and
-	// the rest of the specs started after it, are terminated and restarted.
-	RestForOne
+	// restForOne If one child process terminates and is to be restarted, the 'rest' of the child
+	// processes (that is, the child processes after the terminated child process in the start order) are
+	// terminated. Then the terminated child process and all child processes after it are restarted.
+	restForOne strategyType = ":rest_for_one"
 )
 
-// String returns the string representation of a strategy Type.
-func (t Type) String() string {
-	switch t {
-	case OneForOne:
-		return "ONE_FOR_ONE"
-	case OneForAll:
-		return "ONE_FOR_ALL"
-	case RestForOne:
-		return "REST_FOR_ONE"
-	default:
-		return fmt.Sprintf("UNKNOWN_STRATEGY_TYPE:%d", t)
-	}
+// ChildInfo holds information about the supervisor's children which is used by the strategy evaluator.
+type ChildInfo struct {
+	Name      string
+	Temporary bool
+	Stopped   bool
 }
 
-// Strategy holds the configuration for a supervisor strategy.
-type Strategy struct {
-	typ         Type
-	maxRestarts uint
-	period      time.Duration
-}
-
-// Type returns the configured type of this strategy.
-func (s *Strategy) Type() Type {
-	return s.typ
-}
-
-// MaxRestarts returns the configured max restarts value of this strategy.
-func (s *Strategy) MaxRestarts() uint {
-	return s.maxRestarts
-}
-
-// Period returns the configured period duration of this strategy.
-func (s *Strategy) Period() time.Duration {
-	return s.period
-}
-
-// NewOneForOne returns a new instance of Strategy with type set to OneForOne.
-func NewOneForOne(opts ...Option) *Strategy {
-	s := &Strategy{
-		typ:         OneForOne,
-		maxRestarts: defaultMaxRestarts,
-		period:      defaultPeriod,
-	}
-	for opt := range slices.Values(opts) {
-		opt(s)
-	}
-	return s
-}
-
-// NewOneForAll returns a new instance of Strategy with type set to OneForAll.
-func NewOneForAll(opts ...Option) *Strategy {
-	s := &Strategy{
-		typ:         OneForAll,
-		maxRestarts: defaultMaxRestarts,
-		period:      defaultPeriod,
-	}
-	for opt := range slices.Values(opts) {
-		opt(s)
-	}
-	return s
-}
-
-// NewRestForOne returns a new instance of Strategy with type set to RestForOne.
-func NewRestForOne(opts ...Option) *Strategy {
-	s := &Strategy{
-		typ:         RestForOne,
-		maxRestarts: defaultMaxRestarts,
-		period:      defaultPeriod,
-	}
-	for opt := range slices.Values(opts) {
-		opt(s)
-	}
-	return s
-}
-
-// Option defines an option function for configuring an instance of strategy.
+// Option defines an option function for configuring the strategy's restart intensity.
 type Option func(s *Strategy)
 
 // WithMaxRestarts sets the strategy's max allowed restarts within the specified period.
@@ -118,6 +51,115 @@ func WithPeriod(duration time.Duration) Option {
 	return func(s *Strategy) {
 		if duration > 0 {
 			s.period = duration
+		}
+	}
+}
+
+// Strategy holds strategy configuration for a supervisor.
+// It determines how a supervisor should react to child termination events.
+type Strategy struct {
+	typ         strategyType
+	period      time.Duration
+	maxRestarts uint
+}
+
+// NewOneForOne returns a :one_for_one strategy configured with the provided restart intensity options.
+func NewOneForOne(opts ...Option) *Strategy {
+	return newStrategy(oneForOne, opts...)
+}
+
+// NewOneForAll returns a :one_for_all strategy configured with the provided restart intensity options.
+func NewOneForAll(opts ...Option) *Strategy {
+	return newStrategy(oneForAll, opts...)
+}
+
+// NewRestForOne returns a :rest_for_one strategy configured with the provided restart intensity options.
+func NewRestForOne(opts ...Option) *Strategy {
+	return newStrategy(restForOne, opts...)
+}
+
+// Default returns new instance of Strategy with the default options.
+func Default() *Strategy {
+	return newStrategy(oneForOne)
+}
+
+func newStrategy(typ strategyType, opts ...Option) *Strategy {
+	s := &Strategy{
+		typ:         typ,
+		period:      defaultPeriod,
+		maxRestarts: defaultMaxRestarts,
+	}
+	for opt := range slices.Values(opts) {
+		opt(s)
+	}
+	return s
+}
+
+// MaxRestarts returns the max allowed restarts within the specified period.
+func (s *Strategy) MaxRestarts() uint {
+	return s.maxRestarts
+}
+
+// Period returns the period duration in which the restart intensity is evaluated and applied.
+func (s *Strategy) Period() time.Duration {
+	return s.period
+}
+
+// Evaluate evaluates the supervision strategy and determines which children to shut down and which to restart.
+func (s *Strategy) Evaluate(terminated string, children []ChildInfo) (toShutdown []string, toRestart []string) {
+	switch s.typ {
+	case oneForOne:
+		return nil, []string{terminated}
+	case oneForAll:
+		return evalOneForAll(children)
+	case restForOne:
+		return evalRestForOne(terminated, children)
+	default:
+		panic(fmt.Sprintf("unknown strategy type when evaluating: %q", s.typ))
+	}
+}
+
+func evalOneForAll(children []ChildInfo) (toShutdown []string, toRestart []string) {
+	for child := range reverse(children) {
+		if !child.Stopped {
+			toShutdown = append(toShutdown, child.Name)
+		}
+	}
+	for child := range slices.Values(children) {
+		if !child.Temporary {
+			// a temporary child doesn't get to be restarted
+			toRestart = append(toRestart, child.Name)
+		}
+	}
+	return toShutdown, toRestart
+}
+
+func evalRestForOne(terminated string, children []ChildInfo) (toShutdown []string, toRestart []string) {
+	for child := range reverse(children) {
+		if child.Name == terminated {
+			break
+		}
+		if !child.Stopped {
+			toShutdown = append(toShutdown, child.Name)
+		}
+	}
+	terminatedIdx := slices.IndexFunc(children, func(child ChildInfo) bool {
+		return child.Name == terminated
+	})
+	for child := range slices.Values(children[terminatedIdx:]) {
+		if !child.Temporary {
+			toRestart = append(toRestart, child.Name)
+		}
+	}
+	return toShutdown, toRestart
+}
+
+func reverse[T any](s []T) iter.Seq[T] {
+	return func(yield func(T) bool) {
+		for i := len(s) - 1; i >= 0; i-- {
+			if !yield(s[i]) {
+				return
+			}
 		}
 	}
 }

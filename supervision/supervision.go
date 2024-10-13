@@ -3,7 +3,7 @@ package supervision
 import (
 	"context"
 	"fmt"
-	"time"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -18,24 +18,22 @@ type ChildSpec interface {
 	Name() string
 	// StartLink starts the child linked to the supervisor.
 	StartLink(ctx context.Context) (*goactor.PID, error)
-	// RestartStrategy returns the child's restart strategy.
-	RestartStrategy() RestartStrategy
-	// validateChildSpec is used both for validating and preventing external packages from implementing this interface.
-	validateChildSpec() error
+	// RestartType returns the child's restart strategy.
+	RestartType() RestartType
+	// validate is used both for validating and preventing external packages from implementing this interface.
+	validate() error
 }
 
-// Strategy defines the methods required for representing a supervision Strategy.
-type Strategy interface {
-	Type() strategy.Type
-	MaxRestarts() uint
-	Period() time.Duration
-}
+// Start starts a supervisor for the provided specs.
+func Start(ctx context.Context, strategy *strategy.Strategy, specs ...ChildSpec) error {
+	err := ensureUniqueNamesInSupervisionTree(specs)
+	if err != nil {
+		return fmt.Errorf("ensure unique names in supervision tree: %w", err)
+	}
 
-// StartSupervisor starts a supervisor for the provided specs.
-func StartSupervisor(ctx context.Context, strategy Strategy, specs ...ChildSpec) error {
 	name := fmt.Sprintf("supervisor:parent:%s", uuid.NewString())
-	supervisorSpec := NewSupervisorChildSpec(name, strategy, RestartNever, specs...)
-	err := supervisorSpec.validateChildSpec()
+	supervisorSpec := NewSupervisorSpec(name, strategy, Temporary, specs...)
+	err = supervisorSpec.validate()
 	if err != nil {
 		return fmt.Errorf("validate supervisor child specs: %w", err)
 	}
@@ -46,4 +44,42 @@ func StartSupervisor(ctx context.Context, strategy Strategy, specs ...ChildSpec)
 	}
 
 	return nil
+}
+
+func ensureUniqueNamesInSupervisionTree(specs []ChildSpec) error {
+	allNames := make([]string, 0, len(specs))
+	for spec := range slices.Values(specs) {
+		names, err := specNames(spec)
+		if err != nil {
+			return fmt.Errorf("could not get spec names for child %q: %w", spec.Name(), err)
+		}
+		allNames = append(allNames, names...)
+	}
+	allNames = slices.Compact(allNames)
+	slices.Sort(allNames)
+	if len(slices.Compact(allNames)) != len(allNames) {
+		return fmt.Errorf("supervision tree cannot have children with duplicate names: %v", allNames)
+	}
+
+	return nil
+}
+
+func specNames(spec ChildSpec) ([]string, error) {
+	switch s := spec.(type) {
+	case *WorkerSpec:
+		return []string{s.Name()}, nil
+	case *SupervisorSpec:
+		names := make([]string, len(s.children)+1)
+		names = append(names, s.Name())
+		for child := range slices.Values(s.children) {
+			childNames, err := specNames(child)
+			if err != nil {
+				return nil, fmt.Errorf("supervisor spec names: %w", err)
+			}
+			names = append(names, childNames...)
+		}
+		return names, nil
+	default:
+		return nil, fmt.Errorf("unknown chid spec type with name %q: %T", spec.Name(), spec)
+	}
 }

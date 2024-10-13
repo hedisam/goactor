@@ -14,15 +14,15 @@ import (
 )
 
 func main() {
-	err := supervision.StartSupervisor(
+	err := supervision.Start(
 		context.Background(),
 		strategy.NewOneForOne(
 			strategy.WithPeriod(time.Millisecond*500),
 			strategy.WithMaxRestarts(2),
 		),
-		supervision.NewActorChildSpec(
+		supervision.NewWorkerSpec(
 			":alice",
-			supervision.RestartAlways,
+			supervision.Permanent,
 			goactor.NewActor(actorAlice, goactor.WithInitFunc(func(_ context.Context, _ *goactor.PID) error {
 				fmt.Println("[!] Alice initialised")
 				return nil
