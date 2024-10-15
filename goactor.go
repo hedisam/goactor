@@ -63,21 +63,42 @@ type Actor interface {
 func Spawn(ctx context.Context, actor Actor) (*PID, error) {
 	m := mailbox.NewChanMailbox()
 	pid := newPID(m, m)
-	err := actor.Init(ctx, pid)
-	if err != nil {
-		return nil, fmt.Errorf("init actor: %w", err)
-	}
+	initCh := make(chan error)
 
 	go func() {
-		var runErr error
+		var err error
 		var toPropagate *sysmsg.Message
 		defer func() {
 			r := recover()
-			pid.dispose(ctx, toPropagate, runErr, r)
+			pid.dispose(ctx, toPropagate, err, r)
+
+			select {
+			case <-initCh:
+				// already closed; init was done successfully; error/panic (if any) must've been from running the actor.
+			default:
+				// not closed yet; init has failed, either with an error or a panic.
+				switch {
+				case r != nil:
+					initCh <- fmt.Errorf("panic during init: %v", r)
+				case err != nil:
+					initCh <- fmt.Errorf("init failed: %w", err)
+				}
+				close(initCh)
+			}
 		}()
 
-		toPropagate, runErr = pid.run(ctx, actor)
+		err = actor.Init(ctx, pid)
+		if err != nil {
+			return
+		}
+		close(initCh)
+		toPropagate, err = pid.run(ctx, actor)
 	}()
+
+	err := <-initCh
+	if err != nil {
+		return nil, fmt.Errorf("init actor: %w", err)
+	}
 
 	return pid, nil
 }

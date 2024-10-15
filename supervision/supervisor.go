@@ -26,8 +26,8 @@ type activeChildInfo struct {
 	ctxCancelFunc context.CancelCauseFunc
 }
 
-// Supervisor is a supervisor Actor. It implements the goactor.Actor interface.
-type Supervisor struct {
+// supervisor is a supervisor Actor. It implements the goactor.Actor interface.
+type supervisor struct {
 	self     *goactor.PID
 	name     string
 	strategy *strategy.Strategy
@@ -37,22 +37,24 @@ type Supervisor struct {
 	children []ChildSpec
 
 	idToActiveChild map[string]*activeChildInfo
-	nameToID        map[string]string
+	nameToActivePID map[string]string
 	restarts        *ringbuffer.RingBuffer[time.Time]
 }
 
 // Init initialises the supervisor by spawning all the children.
-func (s *Supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
+func (s *supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
 	goactor.GetLogger().Debug("Initialising supervisor", slog.String("name", s.name))
 	s.self = self
 	s.idToActiveChild = make(map[string]*activeChildInfo, len(s.nameToChild))
-	s.nameToID = make(map[string]string, len(s.nameToChild))
+	s.nameToActivePID = make(map[string]string, len(s.nameToChild))
 	s.restarts = ringbuffer.New[time.Time](s.strategy.MaxRestarts())
 	s.self.SetTrapExit(true)
 
 	defer func() {
 		if err != nil {
-			s.cancelAll(err)
+			for child := range maps.Values(s.idToActiveChild) {
+				_ = s.stopChild(child.spec.Name())
+			}
 		}
 	}()
 
@@ -66,7 +68,7 @@ func (s *Supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
 }
 
 // Receive processes received system messages from its children.
-func (s *Supervisor) Receive(ctx context.Context, message any) (loop bool, err error) {
+func (s *supervisor) Receive(ctx context.Context, message any) (loop bool, err error) {
 	msg, ok := sysmsg.ToMessage(message)
 	if !ok {
 		return true, nil
@@ -83,6 +85,21 @@ func (s *Supervisor) Receive(ctx context.Context, message any) (loop bool, err e
 		// this is what a supervisor handles re its child actors; fallthrough
 	}
 
+	defer func() {
+		if err == nil && len(s.idToActiveChild) == 0 {
+			goactor.GetLogger().Debug("Stopping supervisor as no children are active anymore",
+				slog.String("supervisor_name", s.name),
+			)
+			loop = false
+			return
+		}
+		if err != nil {
+			for child := range maps.Values(s.idToActiveChild) {
+				_ = s.stopChild(child.spec.Name())
+			}
+		}
+	}()
+
 	childInfo, ok := s.idToActiveChild[msg.ProcessID]
 	if !ok {
 		goactor.GetLogger().Debug("Supervisor received system message from an unknown actor",
@@ -94,25 +111,18 @@ func (s *Supervisor) Receive(ctx context.Context, message any) (loop bool, err e
 
 	s.unregisterChild(childInfo)
 	if !s.shouldRestartChild(childInfo.spec, msg.Reason) {
-		if len(s.idToActiveChild) == 0 {
-			goactor.GetLogger().Debug("Stopping supervisor as no children are active anymore",
-				slog.String("supervisor_name", s.name),
-			)
-			return false, nil
-		}
+		return true, nil
 	}
 
 	if s.reachedMaxRestartIntensity() {
-		err = ErrReachedMaxRestartIntensity
-		s.cancelAll(err)
-		return false, err
+		return false, ErrReachedMaxRestartIntensity // todo: should explicitly shutdown other children with :shutdown
 	}
 
 	// TODO: should we record the exit message timestamp as the restart event timestamp?
 	s.restarts.Put(time.Now().UTC())
 
 	toShutdown, toRestart := s.strategy.Evaluate(childInfo.spec.Name(), mapSlice(s.children, func(spec ChildSpec) strategy.ChildInfo {
-		_, alive := s.nameToID[spec.Name()]
+		_, alive := s.nameToActivePID[spec.Name()]
 		return strategy.ChildInfo{
 			Name:      spec.Name(),
 			Temporary: spec.RestartType() == Temporary,
@@ -137,13 +147,13 @@ func (s *Supervisor) Receive(ctx context.Context, message any) (loop bool, err e
 }
 
 // AfterFunc implements goactor.Actor.
-func (s *Supervisor) AfterFunc() (timeout time.Duration, afterFunc goactor.AfterFunc) {
+func (s *supervisor) AfterFunc() (timeout time.Duration, afterFunc goactor.AfterFunc) {
 	return 0, func(ctx context.Context) error {
 		return nil
 	}
 }
 
-func (s *Supervisor) shouldRestartChild(spec ChildSpec, reason sysmsg.Reason) bool {
+func (s *supervisor) shouldRestartChild(spec ChildSpec, reason sysmsg.Reason) bool {
 	switch spec.RestartType() {
 	case Permanent:
 		return true
@@ -155,7 +165,7 @@ func (s *Supervisor) shouldRestartChild(spec ChildSpec, reason sysmsg.Reason) bo
 	}
 }
 
-func (s *Supervisor) reachedMaxRestartIntensity() bool {
+func (s *supervisor) reachedMaxRestartIntensity() bool {
 	oldestRestart, _ := s.restarts.Get()
 	switch {
 	case s.strategy.MaxRestarts() == 0:
@@ -167,7 +177,7 @@ func (s *Supervisor) reachedMaxRestartIntensity() bool {
 	}
 }
 
-func (s *Supervisor) startChild(ctx context.Context, name string) error {
+func (s *supervisor) startChild(ctx context.Context, name string) error {
 	child, ok := s.nameToChild[name]
 	if !ok {
 		return fmt.Errorf("no child spec found with the given name %q", name)
@@ -178,27 +188,22 @@ func (s *Supervisor) startChild(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("startlink child %q: %w", child.Name(), err)
 	}
-	info := &activeChildInfo{
+
+	err = s.registerChild(&activeChildInfo{
 		pid:           pid,
 		spec:          child,
 		ctxCancelFunc: cancel,
-	}
-	defer func() {
-		if err != nil {
-			cancel(err)
-			s.unregisterChild(info)
-		}
-	}()
-	err = s.registerChild(info)
+	})
 	if err != nil {
-		return fmt.Errorf("mark child as started: %w", err)
+		_ = s.stopChild(name)
+		return fmt.Errorf("resgiter child: %w", err)
 	}
 	return nil
 }
 
-func (s *Supervisor) registerChild(info *activeChildInfo) error {
+func (s *supervisor) registerChild(info *activeChildInfo) error {
+	s.nameToActivePID[info.spec.Name()] = info.pid.ID()
 	s.idToActiveChild[info.pid.ID()] = info
-	s.nameToID[info.spec.Name()] = info.pid.ID()
 	err := s.self.Link(info.pid)
 	if err != nil {
 		return fmt.Errorf("link to child: %w", err)
@@ -210,22 +215,15 @@ func (s *Supervisor) registerChild(info *activeChildInfo) error {
 	return nil
 }
 
-func (s *Supervisor) unregisterChild(activeChild *activeChildInfo) {
+func (s *supervisor) unregisterChild(activeChild *activeChildInfo) {
 	goactor.Unregister(activeChild.spec.Name())
 	_ = s.self.Unlink(activeChild.pid)
 	delete(s.idToActiveChild, activeChild.pid.ID())
-	delete(s.nameToID, activeChild.spec.Name())
+	delete(s.nameToActivePID, activeChild.spec.Name())
 }
 
-func (s *Supervisor) cancelAll(err error) {
-	for info := range maps.Values(s.idToActiveChild) {
-		s.unregisterChild(info)
-		info.ctxCancelFunc(err)
-	}
-}
-
-func (s *Supervisor) stopChild(name string) error {
-	id, ok := s.nameToID[name]
+func (s *supervisor) stopChild(name string) error {
+	id, ok := s.nameToActivePID[name]
 	if !ok {
 		return fmt.Errorf("could not find child ID with name %q", name)
 	}
@@ -239,10 +237,10 @@ func (s *Supervisor) stopChild(name string) error {
 	return nil
 }
 
-func (s *Supervisor) strategyChildrenInfo() []strategy.ChildInfo {
+func (s *supervisor) strategyChildrenInfo() []strategy.ChildInfo {
 	children := make([]strategy.ChildInfo, 0, len(s.children))
 	for child := range slices.Values(s.children) {
-		_, alive := s.nameToID[child.Name()]
+		_, alive := s.nameToActivePID[child.Name()]
 		children = append(children, strategy.ChildInfo{
 			Name:      child.Name(),
 			Temporary: child.RestartType() == Temporary,

@@ -21,7 +21,7 @@ type SupervisorSpec struct {
 	strategy    *strategy.Strategy
 }
 
-// NewSupervisorSpec returns a new Supervisor child spec.
+// NewSupervisorSpec returns a new supervisor child spec.
 func NewSupervisorSpec(name string, strategy *strategy.Strategy, restartType RestartType, children []ChildSpec) *SupervisorSpec {
 	return &SupervisorSpec{
 		name:        strings.TrimSpace(name),
@@ -43,15 +43,13 @@ func (s *SupervisorSpec) StartLink(ctx context.Context) (*goactor.PID, error) {
 		nameToChild[spec.Name()] = spec
 	}
 
-	supervisor := &Supervisor{
+	goactor.GetLogger().Debug("Starting supervisor", slog.String("supervisor_name", s.name))
+	pid, err := goactor.Spawn(ctx, &supervisor{
 		name:        s.name,
 		strategy:    s.strategy,
 		nameToChild: nameToChild,
 		children:    s.children,
-	}
-
-	goactor.GetLogger().Debug("Starting supervisor", slog.String("supervisor_name", s.name))
-	pid, err := goactor.Spawn(ctx, supervisor)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("spawn supervisor actor %q: %w", s.name, err)
 	}
