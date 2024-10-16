@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/hedisam/goactor/sysmsg"
 	"time"
 
 	"github.com/hedisam/goactor"
+	"github.com/hedisam/goactor/sysmsg"
 )
 
 func main() {
@@ -22,17 +22,19 @@ func main() {
 		return false, errors.New("got nothing to do so exit with an error")
 	}))
 
-	parent, _ := goactor.Spawn(ctx, goactor.NewActor(func(ctx context.Context, msg any) (loop bool, err error) {
+	parent := goactor.NewActor(func(ctx context.Context, msg any) (loop bool, err error) {
 		if processID, reason, ok := sysmsg.LinkedActorDown(msg); ok {
 			fmt.Printf("[ParentActor] Linked actor %q terminated with reason %q\n", processID, reason)
 			return true, nil
 		}
 		fmt.Printf("[ParentActor] message: %+v\n", msg)
 		return true, nil
+	}, goactor.WithInitFunc(func(context.Context, *goactor.PID) error {
+		_ = goactor.SetTrapExit(true)
+		_ = goactor.Link(child)
+		return nil
 	}))
-	parent.SetTrapExit(true)
-
-	err := parent.Link(child)
+	_, err := goactor.Spawn(ctx, parent)
 	if err != nil {
 		panic(err)
 	}

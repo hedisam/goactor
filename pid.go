@@ -75,12 +75,6 @@ func (p *PID) ID() string {
 	return p.id
 }
 
-// SetTrapExit can be used to trap signals and exit messages from linked actors.
-// A direct sysmsg.Signal with a sysmsg.ReasonKill cannot be trapped.
-func (p *PID) SetTrapExit(trapExit bool) {
-	p.trapExit.Store(trapExit)
-}
-
 // String returns the ID. It implements the Stringer interface.
 func (p *PID) String() string {
 	return fmt.Sprintf("pid@%s", p.id)
@@ -89,14 +83,14 @@ func (p *PID) String() string {
 // Disposed reports whether this PID is disposed or not.
 // Disposed actors neither can be linked/monitored nor can receive messages.
 func (p *PID) Disposed() bool {
-	return p.disposed.Load()
+	return p == nil || p.disposed.Load()
 }
 
-// Link creates a bidirectional link between the two actors.
+// link creates a bidirectional link between the two actors.
 // Linked actors gets notified when the other actor exits. If TrapExit is set (see SetTrapExit), the notification
 // message gets delegated to the user defined receive function otherwise the linked actor terminates as well if the
 // exit reason is anything other than sysmsg.ReasonNormal.
-func (p *PID) Link(pid *PID) error {
+func (p *PID) link(pid *PID) error {
 	if p.Disposed() {
 		return ErrDisposed
 	}
@@ -108,8 +102,8 @@ func (p *PID) Link(pid *PID) error {
 	return nil
 }
 
-// Unlink removes the bidirectional link between the two actors.
-func (p *PID) Unlink(pid *PID) error {
+// unlink removes the bidirectional link between the two actors.
+func (p *PID) unlink(pid *PID) error {
 	if p.Disposed() {
 		return ErrDisposed
 	}
@@ -120,9 +114,9 @@ func (p *PID) Unlink(pid *PID) error {
 	return nil
 }
 
-// Monitor monitors the provided PID.
+// monitor monitors the provided PID.
 // The user defined receive function of monitor actors receive a sysmsg.Down message when a monitored actor goes down.
-func (p *PID) Monitor(pid *PID) error {
+func (p *PID) monitor(pid *PID) error {
 	if p.Disposed() {
 		return ErrDisposed
 	}
@@ -134,8 +128,8 @@ func (p *PID) Monitor(pid *PID) error {
 	return nil
 }
 
-// Demonitor de-monitors the provided PID.
-func (p *PID) Demonitor(pid *PID) error {
+// demonitor de-monitors the provided PID.
+func (p *PID) demonitor(pid *PID) error {
 	if p.Disposed() {
 		return ErrDisposed
 	}

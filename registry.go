@@ -1,10 +1,12 @@
 package goactor
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,21 +14,31 @@ import (
 )
 
 const (
-	// defaultRegistrySize is the default initial size for the registry.
+	// defaultRegistrySize is the default initial size for the processRegistry.
 	defaultRegistrySize = 1024
 
 	// registrySizeEnvVar can be used to provide a custom value for the Registry.
 	registrySizeEnvVar = "GOACTOR_PROCESSES_REGISTRY_SIZE"
 )
 
-// registry is used to name goactor processes.
-type registry struct {
+var (
+	// ErrSelfDisposed is returned when no registered PID is found for the running actor.
+	ErrSelfDisposed = errors.New("self pid not found, probably disposed")
+)
+
+// processRegistry is used to name goactor processes.
+type processRegistry struct {
+	// used for registering actors with a name
 	nameToPID map[string]*PID
 	pidToName map[string]string
-	mu        sync.RWMutex
+	nameMu    sync.RWMutex
+
+	// used for linking processes and other operations limited to a running actor itself e.g. setting trap_exit
+	gIDToPID map[string]*PID
+	gIDMu    sync.RWMutex
 }
 
-var processRegistry *registry
+var registry *processRegistry
 
 func initRegistry() {
 	var size int
@@ -43,10 +55,44 @@ func initRegistry() {
 		size = s
 	}
 
-	processRegistry = &registry{
+	registry = &processRegistry{
 		nameToPID: make(map[string]*PID, size),
 		pidToName: make(map[string]string, size),
+		gIDToPID:  make(map[string]*PID, size),
 	}
+}
+
+func (r *processRegistry) registerSelf(pid *PID) {
+	gid, err := goroutineID()
+	if err != nil {
+		panic(err)
+	}
+	r.gIDMu.Lock()
+	r.gIDToPID[gid] = pid
+	r.gIDMu.Unlock()
+}
+
+func (r *processRegistry) unregisterSelf() {
+	gid, _ := goroutineID()
+	r.gIDMu.Lock()
+	delete(r.gIDToPID, gid)
+	r.gIDMu.Unlock()
+}
+
+func (r *processRegistry) self() (*PID, error) {
+	gid, err := goroutineID()
+	if err != nil {
+		panic(err)
+	}
+
+	r.gIDMu.RLock()
+	defer r.gIDMu.RUnlock()
+
+	pid, ok := r.gIDToPID[gid]
+	if !ok {
+		return nil, ErrSelfDisposed
+	}
+	return pid, nil
 }
 
 // Register associates a PID with the given name.
@@ -59,19 +105,19 @@ func Register(name string, pid ProcessIdentifier) error {
 		return errors.New("cannot register nil pid")
 	}
 
-	processRegistry.mu.Lock()
-	defer processRegistry.mu.Unlock()
+	registry.nameMu.Lock()
+	defer registry.nameMu.Unlock()
 
-	regPID, ok := processRegistry.nameToPID[name]
+	regPID, ok := registry.nameToPID[name]
 	if ok {
 		return fmt.Errorf("name already taken by <%s>", regPID.id)
 	}
-	regName, ok := processRegistry.pidToName[pid.PID().id]
+	regName, ok := registry.pidToName[pid.PID().id]
 	if ok {
 		return fmt.Errorf("pid has already been given another name %q", regName)
 	}
 
-	processRegistry.nameToPID[name] = pid.PID()
+	registry.nameToPID[name] = pid.PID()
 	return nil
 }
 
@@ -81,8 +127,8 @@ func Unregister(names ...string) {
 		return
 	}
 
-	processRegistry.mu.Lock()
-	defer processRegistry.mu.Unlock()
+	registry.nameMu.Lock()
+	defer registry.nameMu.Unlock()
 
 	for name := range slices.Values(names) {
 		unregister(name)
@@ -90,20 +136,20 @@ func Unregister(names ...string) {
 }
 
 func unregister(name string) {
-	pid, ok := processRegistry.nameToPID[name]
+	pid, ok := registry.nameToPID[name]
 	if !ok {
 		return
 	}
-	delete(processRegistry.nameToPID, name)
-	delete(processRegistry.pidToName, pid.id)
+	delete(registry.nameToPID, name)
+	delete(registry.pidToName, pid.id)
 }
 
 // WhereIs returns the associated PID with the given name.
 func WhereIs(name string) (*PID, bool) {
-	processRegistry.mu.RLock()
-	defer processRegistry.mu.RUnlock()
+	registry.nameMu.RLock()
+	defer registry.nameMu.RUnlock()
 
-	pid, ok := processRegistry.nameToPID[name]
+	pid, ok := registry.nameToPID[name]
 	return pid, ok
 }
 
@@ -123,3 +169,14 @@ func (name NamedPID) PID() *PID {
 }
 
 func (name NamedPID) namedPID() {}
+
+func goroutineID() (string, error) {
+	var buf [32]byte
+	n := runtime.Stack(buf[:], false)
+	idx := bytes.IndexByte(buf[:n], '[')
+	if idx <= 0 {
+		return "", errors.New("could not extract actor's goroutine ID from stacktrace")
+	}
+	prefix := "goroutine "
+	return string(buf[len(prefix) : idx-1]), nil
+}

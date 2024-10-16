@@ -48,7 +48,10 @@ func (s *supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
 	s.idToActiveChild = make(map[string]*activeChildInfo, len(s.nameToChild))
 	s.nameToActivePID = make(map[string]string, len(s.nameToChild))
 	s.restarts = ringbuffer.New[time.Time](s.strategy.MaxRestarts())
-	s.self.SetTrapExit(true)
+	err = goactor.SetTrapExit(true)
+	if err != nil {
+		return fmt.Errorf("set supervisor's trap exit: %w", err)
+	}
 
 	defer func() {
 		if err != nil {
@@ -204,7 +207,7 @@ func (s *supervisor) startChild(ctx context.Context, name string) error {
 func (s *supervisor) registerChild(info *activeChildInfo) error {
 	s.nameToActivePID[info.spec.Name()] = info.pid.ID()
 	s.idToActiveChild[info.pid.ID()] = info
-	err := s.self.Link(info.pid)
+	err := goactor.Link(info.pid)
 	if err != nil {
 		return fmt.Errorf("link to child: %w", err)
 	}
@@ -217,7 +220,7 @@ func (s *supervisor) registerChild(info *activeChildInfo) error {
 
 func (s *supervisor) unregisterChild(activeChild *activeChildInfo) {
 	goactor.Unregister(activeChild.spec.Name())
-	_ = s.self.Unlink(activeChild.pid)
+	_ = goactor.Unlink(activeChild.pid)
 	delete(s.idToActiveChild, activeChild.pid.ID())
 	delete(s.nameToActivePID, activeChild.spec.Name())
 }
@@ -235,19 +238,6 @@ func (s *supervisor) stopChild(name string) error {
 	// TODO: attempt to shutdown then :brutal_kill with context cancellation if had to; requires child shutdown behaviour to be implemented
 	info.ctxCancelFunc(sysmsg.ReasonKill)
 	return nil
-}
-
-func (s *supervisor) strategyChildrenInfo() []strategy.ChildInfo {
-	children := make([]strategy.ChildInfo, 0, len(s.children))
-	for child := range slices.Values(s.children) {
-		_, alive := s.nameToActivePID[child.Name()]
-		children = append(children, strategy.ChildInfo{
-			Name:      child.Name(),
-			Temporary: child.RestartType() == Temporary,
-			Stopped:   !alive,
-		})
-	}
-	return children
 }
 
 func mapSlice[T any, D any](s []T, fn func(T) D) []D {

@@ -30,16 +30,14 @@ func main() {
 						"Alice",
 						supervision.Permanent,
 						func() goactor.Actor {
-							alice := newPanicActor("Alice")
-							return goactor.NewActor(alice.Receive, goactor.WithInitFunc(alice.Init))
+							return newPanicActor("Alice")
 						},
 					),
 					supervision.NewWorkerSpec(
 						"Bob",
 						supervision.Permanent,
 						func() goactor.Actor {
-							bob := newPanicActor("Bob")
-							return goactor.NewActor(bob.Receive, goactor.WithInitFunc(bob.Init))
+							return newPanicActor("Bob")
 						},
 					),
 				},
@@ -113,4 +111,8 @@ func (a *panicActor) Init(context.Context, *goactor.PID) error {
 		fmt.Println("Bob initialised. If not first init, then the child supervisor has been restarted!")
 	}
 	return nil
+}
+
+func (a *panicActor) AfterFunc() (timeout time.Duration, afterFunc goactor.AfterFunc) {
+	return 0, nil
 }

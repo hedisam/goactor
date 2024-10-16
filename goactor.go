@@ -87,6 +87,9 @@ func Spawn(ctx context.Context, actor Actor) (*PID, error) {
 			}
 		}()
 
+		registry.registerSelf(pid)
+		defer registry.unregisterSelf()
+
 		err = actor.Init(ctx, pid)
 		if err != nil {
 			return
@@ -117,5 +120,78 @@ func Send(ctx context.Context, processIdentifier ProcessIdentifier, msg any) err
 	if err != nil {
 		return fmt.Errorf("push message via dispatcher: %w", err)
 	}
+	return nil
+}
+
+// Link links self to the provided target PID.
+// Link can only be called from the running Actor e.g. from the actor's Init, Receive, or After functions.
+func Link(to *PID) error {
+	self, err := registry.self()
+	if err != nil {
+		return fmt.Errorf("get self pid: %w", err)
+	}
+
+	err = self.link(to)
+	if err != nil {
+		return fmt.Errorf("link self to target pid: %w", err)
+	}
+	return nil
+}
+
+// Unlink unlinks self from the linkee.
+// Unlink can only be called from the running Actor e.g. from the actor's Init, Receive, or After functions.
+func Unlink(linkee *PID) error {
+	self, err := registry.self()
+	if err != nil {
+		return fmt.Errorf("get self pid: %w", err)
+	}
+
+	err = self.unlink(linkee)
+	if err != nil {
+		return fmt.Errorf("unlink self from linkee: %w", err)
+	}
+	return nil
+}
+
+// Monitor monitors the provided PID.
+// The user defined receive function of monitor actors receive a sysmsg.Down message when a monitored actor goes down.
+// Monitor can only be called from the running Actor e.g. from the actor's Init, Receive, or After functions.
+func Monitor(pid *PID) error {
+	self, err := registry.self()
+	if err != nil {
+		return fmt.Errorf("get self pid: %w", err)
+	}
+
+	err = self.monitor(pid)
+	if err != nil {
+		return fmt.Errorf("monitor target pid: %w", err)
+	}
+	return nil
+}
+
+// Demonitor de-monitors the provided PID.
+// Demonitor can only be called from the running Actor e.g. from the actor's Init, Receive, or After functions.
+func Demonitor(pid *PID) error {
+	self, err := registry.self()
+	if err != nil {
+		return fmt.Errorf("get self pid: %w", err)
+	}
+
+	err = self.demonitor(pid)
+	if err != nil {
+		return fmt.Errorf("demonitor target pid: %w", err)
+	}
+	return nil
+}
+
+// SetTrapExit can be used to trap signals and exit messages from linked actors.
+// A direct sysmsg.Signal with a sysmsg.ReasonKill cannot be trapped.
+// SetTrapExit can only be called from the running Actor e.g. from the actor's Init, Receive, or After functions.
+func SetTrapExit(trapExit bool) error {
+	self, err := registry.self()
+	if err != nil {
+		return fmt.Errorf("get self pid: %w", err)
+	}
+	self.trapExit.Store(trapExit)
 	return nil
 }
