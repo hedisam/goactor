@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -15,20 +14,20 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	child, _ := goactor.Spawn(ctx, goactor.NewActor(func(ctx context.Context, msg any) (loop bool, err error) {
+	child, _ := goactor.Spawn(ctx, goactor.NewActor(func(ctx context.Context, msg any) error {
 		fmt.Printf("[ChildActor] message: %+v\n", msg)
-		fmt.Printf("[ChildActor] sleeping for 1s then will error\n")
-		time.Sleep(time.Second)
-		return false, errors.New("got nothing to do so exit with an error")
+		fmt.Printf("[ChildActor] sleeping for a bit then will go down\n")
+		time.Sleep(time.Millisecond * 100)
+		return sysmsg.ReasonShutdown // stop with a shutdown reason
 	}))
 
-	parent := goactor.NewActor(func(ctx context.Context, msg any) (loop bool, err error) {
+	parent := goactor.NewActor(func(ctx context.Context, msg any) error {
 		if processID, reason, ok := sysmsg.LinkedActorDown(msg); ok {
 			fmt.Printf("[ParentActor] Linked actor %q terminated with reason %q\n", processID, reason)
-			return true, nil
+			return nil
 		}
 		fmt.Printf("[ParentActor] message: %+v\n", msg)
-		return true, nil
+		return nil
 	}, goactor.WithInitFunc(func(context.Context, *goactor.PID) error {
 		_ = goactor.SetTrapExit(true)
 		_ = goactor.Link(child)

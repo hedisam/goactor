@@ -51,7 +51,7 @@ type AfterFunc func(context.Context) error
 // Actor defines the methods required by an actor.
 type Actor interface {
 	// Receive is called when a message is received.
-	Receive(ctx context.Context, msg any) (loop bool, err error)
+	Receive(ctx context.Context, msg any) error
 	// Init is called before spawning the Actor when the PID is available.
 	Init(ctx context.Context, pid *PID) error
 	// AfterFunc specifies a function to be called if no messages are received after the provided timeout.

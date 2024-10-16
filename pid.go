@@ -179,12 +179,9 @@ func (p *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
 			}
 		}
 
-		loop, err := actor.Receive(ctx, msg)
+		err = actor.Receive(ctx, msg)
 		if err != nil {
 			return nil, fmt.Errorf("actor receive: %w", err)
-		}
-		if !loop {
-			return nil, nil
 		}
 	}
 }
@@ -236,7 +233,7 @@ func (p *PID) dispose(ctx context.Context, propagate *sysmsg.Message, runErr err
 	case recovered != nil:
 		reason = fmt.Errorf("panic: %v", recovered)
 	case runErr != nil:
-		reason = fmt.Errorf("actor runtime error: %w", runErr)
+		reason = fmt.Errorf("actor runtime: %w", runErr)
 	case propagate != nil:
 		reason = propagate.Reason
 	default:

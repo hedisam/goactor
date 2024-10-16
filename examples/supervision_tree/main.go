@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -89,18 +88,15 @@ func newPanicActor(name string) *panicActor {
 	return &panicActor{name: name}
 }
 
-func (a *panicActor) Receive(_ context.Context, msg any) (loop bool, err error) {
+func (a *panicActor) Receive(_ context.Context, msg any) error {
 	switch a.name {
 	case "Alice":
 		fmt.Println("Alice received message; PANIC")
 		panic(msg)
 	case "Bob":
 		fmt.Println("Bob received msg:", msg)
-	default:
-		fmt.Printf("Unknown actor %q received message: %v\n", a.name, msg)
-		os.Exit(1)
 	}
-	return true, nil
+	return fmt.Errorf("unknown actor %q received message: %v\n", a.name, msg)
 }
 
 func (a *panicActor) Init(context.Context, *goactor.PID) error {

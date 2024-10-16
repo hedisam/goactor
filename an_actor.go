@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-type ReceiveFunc = func(ctx context.Context, msg any) (loop bool, err error)
+type ReceiveFunc = func(ctx context.Context, msg any) error
 type InitFunc = func(ctx context.Context, pid *PID) error
 type ActorOption func(a *AnActor)
 
@@ -46,7 +46,7 @@ func NewActor(receiver ReceiveFunc, opts ...ActorOption) *AnActor {
 	return a
 }
 
-func (a *AnActor) Receive(ctx context.Context, msg any) (loop bool, err error) {
+func (a *AnActor) Receive(ctx context.Context, msg any) error {
 	return a.receiveFunc(ctx, msg)
 }
 

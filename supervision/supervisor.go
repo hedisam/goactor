@@ -15,6 +15,8 @@ import (
 	"github.com/hedisam/goactor/sysmsg"
 )
 
+var _ goactor.Actor = &supervisor{}
+
 var (
 	// ErrReachedMaxRestartIntensity is returned when too many restarts occur within the specified time window.
 	ErrReachedMaxRestartIntensity = errors.New("shutdown: reached maximum restart intensity")
@@ -71,19 +73,19 @@ func (s *supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
 }
 
 // Receive processes received system messages from its children.
-func (s *supervisor) Receive(ctx context.Context, message any) (loop bool, err error) {
+func (s *supervisor) Receive(ctx context.Context, message any) (err error) {
 	msg, ok := sysmsg.ToMessage(message)
 	if !ok {
-		return true, nil
+		return nil
 	}
 
 	switch msg.Type {
 	case sysmsg.Signal:
 		// TODO: support signal messages required for supervision trees
-		return true, nil
+		return nil
 	case sysmsg.Down:
 		// a supervisor doesn't monitor actors, it gets linked to them while trapping exit messages.
-		return true, nil
+		return nil
 	case sysmsg.Exit:
 		// this is what a supervisor handles re its child actors; fallthrough
 	}
@@ -93,7 +95,7 @@ func (s *supervisor) Receive(ctx context.Context, message any) (loop bool, err e
 			goactor.GetLogger().Debug("Stopping supervisor as no children are active anymore",
 				slog.String("supervisor_name", s.name),
 			)
-			loop = false
+			err = sysmsg.ReasonNormal
 			return
 		}
 		if err != nil {
@@ -109,16 +111,16 @@ func (s *supervisor) Receive(ctx context.Context, message any) (loop bool, err e
 			slog.String("supervisor_name", s.name),
 			slog.String("actor_id", msg.ProcessID),
 		)
-		return true, nil
+		return nil
 	}
 
 	s.unregisterChild(childInfo)
 	if !s.shouldRestartChild(childInfo.spec, msg.Reason) {
-		return true, nil
+		return nil
 	}
 
 	if s.reachedMaxRestartIntensity() {
-		return false, ErrReachedMaxRestartIntensity // todo: should explicitly shutdown other children with :shutdown
+		return ErrReachedMaxRestartIntensity // todo: should explicitly shutdown other children with :shutdown
 	}
 
 	// TODO: should we record the exit message timestamp as the restart event timestamp?
@@ -136,17 +138,17 @@ func (s *supervisor) Receive(ctx context.Context, message any) (loop bool, err e
 	for name := range slices.Values(toShutdown) {
 		err = s.stopChild(name)
 		if err != nil {
-			return false, fmt.Errorf("stop child %q: %w", name, err)
+			return fmt.Errorf("stop child %q: %w", name, err)
 		}
 	}
 	for name := range slices.Values(toRestart) {
 		err = s.startChild(ctx, name)
 		if err != nil {
-			return false, fmt.Errorf("restart child %q: %w", name, err)
+			return fmt.Errorf("restart child %q: %w", name, err)
 		}
 	}
 
-	return true, nil
+	return nil
 }
 
 // AfterFunc implements goactor.Actor.

@@ -58,13 +58,13 @@ type SimpleActor struct {
 	start   *time.Time
 }
 
-func (s *SimpleActor) Receive(_ context.Context, msg any) (loop bool, err error) {
+func (s *SimpleActor) Receive(_ context.Context, msg any) error {
 	if s.start == nil {
 		now := time.Now()
 		s.start = &now
 	}
 	fmt.Printf("[+] SimpleActor: %+v %s elapsed from start\n", msg, time.Since(*s.start))
-	return true, nil
+	return nil
 }
 
 func (s *SimpleActor) AfterFunc() (time.Duration, goactor.AfterFunc) {

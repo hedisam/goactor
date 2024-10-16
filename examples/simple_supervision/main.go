@@ -66,10 +66,10 @@ func main() {
 	wg.Wait()
 }
 
-func actorAlice(_ context.Context, msg any) (loop bool, err error) {
+func actorAlice(_ context.Context, msg any) error {
 	fmt.Println(":alice received msg:", msg)
 	if msg == ":panic" {
 		panic(msg)
 	}
-	return true, nil
+	return nil
 }
