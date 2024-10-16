@@ -17,9 +17,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	alice := newPanicActor("Alice")
-	bob := newPanicActor("Bob")
-
+	// start a supervision tree
 	err := supervision.Start(ctx,
 		strategy.NewOneForOne(),
 		[]supervision.ChildSpec{
@@ -31,12 +29,18 @@ func main() {
 					supervision.NewWorkerSpec(
 						"Alice",
 						supervision.Permanent,
-						goactor.NewActor(alice.Receive, goactor.WithInitFunc(alice.Init)),
+						func() goactor.Actor {
+							alice := newPanicActor("Alice")
+							return goactor.NewActor(alice.Receive, goactor.WithInitFunc(alice.Init))
+						},
 					),
 					supervision.NewWorkerSpec(
 						"Bob",
 						supervision.Permanent,
-						goactor.NewActor(bob.Receive, goactor.WithInitFunc(bob.Init)),
+						func() goactor.Actor {
+							bob := newPanicActor("Bob")
+							return goactor.NewActor(bob.Receive, goactor.WithInitFunc(bob.Init))
+						},
 					),
 				},
 			),

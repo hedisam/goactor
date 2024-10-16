@@ -24,10 +24,12 @@ func main() {
 			supervision.NewWorkerSpec(
 				":alice",
 				supervision.Permanent,
-				goactor.NewActor(actorAlice, goactor.WithInitFunc(func(_ context.Context, _ *goactor.PID) error {
-					log.Println("[!] Alice initialised")
-					return nil
-				})),
+				func() goactor.Actor {
+					return goactor.NewActor(actorAlice, goactor.WithInitFunc(func(_ context.Context, _ *goactor.PID) error {
+						log.Println("[!] Alice initialised")
+						return nil
+					}))
+				},
 			),
 		},
 	)

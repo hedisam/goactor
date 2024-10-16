@@ -11,19 +11,23 @@ import (
 
 var _ ChildSpec = &WorkerSpec{}
 
+// ActorFactory is what expected by a WorkerSpec. It's necessary to have an ActorFactory that can create a fresh
+// instance of the Actor whenever the supervisor restarts the processes.
+type ActorFactory func() goactor.Actor
+
 // WorkerSpec holds the configuration for spawning a worker child.
 type WorkerSpec struct {
-	name        string
-	actor       goactor.Actor
-	restartType RestartType
+	name         string
+	actorFactory ActorFactory
+	restartType  RestartType
 }
 
 // NewWorkerSpec returns a new goactor.Actor child spec.
-func NewWorkerSpec(name string, restartType RestartType, actor goactor.Actor) *WorkerSpec {
+func NewWorkerSpec(name string, restartType RestartType, af ActorFactory) *WorkerSpec {
 	return &WorkerSpec{
-		name:        strings.TrimSpace(name),
-		actor:       actor,
-		restartType: restartType,
+		name:         strings.TrimSpace(name),
+		actorFactory: af,
+		restartType:  restartType,
 	}
 }
 
@@ -34,7 +38,7 @@ func (s *WorkerSpec) Name() string {
 
 // StartLink spawns the child actor linked to the supervisor.
 func (s *WorkerSpec) StartLink(ctx context.Context) (*goactor.PID, error) {
-	pid, err := goactor.Spawn(ctx, s.actor)
+	pid, err := goactor.Spawn(ctx, s.actorFactory())
 	if err != nil {
 		return nil, fmt.Errorf("spawn actor child: %w", err)
 	}
@@ -50,7 +54,7 @@ func (s *WorkerSpec) validate() error {
 	if s.name == "" {
 		return errors.New("child spec name cannot be empty")
 	}
-	if s.actor == nil {
+	if s.actorFactory == nil {
 		return fmt.Errorf("nil actor provided for child worker %q", s.name)
 	}
 
