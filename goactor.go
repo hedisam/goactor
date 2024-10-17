@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"os"
-
 	"github.com/hedisam/goactor/internal/mailbox"
 	"github.com/hedisam/goactor/sysmsg"
+	"log/slog"
+	"os"
+	"sync/atomic"
 )
 
 var (
@@ -49,7 +49,7 @@ type ProcessIdentifier interface {
 func Spawn(ctx context.Context, actor Actor) (*PID, error) {
 	m := mailbox.NewChanMailbox()
 	pid := newPID(m, m)
-	initCh := make(chan error)
+	initCond := newChanCondOnce[error]()
 
 	go func() {
 		var err error
@@ -58,18 +58,12 @@ func Spawn(ctx context.Context, actor Actor) (*PID, error) {
 			r := recover()
 			pid.dispose(ctx, toPropagate, err, r)
 
-			select {
-			case <-initCh:
-				// already closed; init was done successfully; error/panic (if any) must've been from running the actor.
-			default:
-				// not closed yet; init has failed, either with an error or a panic.
-				switch {
-				case r != nil:
-					initCh <- fmt.Errorf("panic during init: %v", r)
-				case err != nil:
-					initCh <- fmt.Errorf("init failed: %w", err)
+			if !initCond.Fired() {
+				// we must have either an error or recovered panic from the init function.
+				if r != nil {
+					err = errors.Join(err, fmt.Errorf("init func failed with panic: %v", r))
 				}
-				close(initCh)
+				initCond.Signal(err)
 			}
 		}()
 
@@ -82,11 +76,11 @@ func Spawn(ctx context.Context, actor Actor) (*PID, error) {
 				return
 			}
 		}
-		close(initCh)
+		initCond.Signal(nil)
 		toPropagate, err = pid.run(ctx, actor)
 	}()
 
-	err := <-initCh
+	err := initCond.Wait()
 	if err != nil {
 		return nil, fmt.Errorf("init actor: %w", err)
 	}
@@ -182,4 +176,36 @@ func SetTrapExit(trapExit bool) error {
 	}
 	self.trapExit.Store(trapExit)
 	return nil
+}
+
+// chanCondOnce is similar to sync.Cond but Signal can be fired (only once) with a value of T which can be received by Wait.
+type chanCondOnce[T any] struct {
+	ch    chan T
+	fired atomic.Bool
+}
+
+func newChanCondOnce[T any]() *chanCondOnce[T] {
+	return &chanCondOnce[T]{
+		ch: make(chan T),
+	}
+}
+
+// Signal signals the goroutine blocked by Wait with the provided value.
+// Signal can only be fired once, any further signals will be ignored.
+// It blocks until Wait receives the value.
+func (c *chanCondOnce[T]) Signal(v T) {
+	if c.fired.CompareAndSwap(false, true) {
+		c.ch <- v
+		close(c.ch)
+	}
+}
+
+// Wait blocks until Signal is fired. It will return immediately if Signal has already been fired.
+func (c *chanCondOnce[T]) Wait() T {
+	return <-c.ch
+}
+
+// Fired returns true if the cond has already signaled.
+func (c *chanCondOnce[T]) Fired() bool {
+	return c.fired.Load()
 }
