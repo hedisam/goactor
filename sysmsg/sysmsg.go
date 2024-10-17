@@ -49,30 +49,3 @@ func ToMessage(message any) (*Message, bool) {
 	msg, ok := message.(*Message)
 	return msg, ok
 }
-
-// MonitoredActorDown checks if a system Message is about a down monitored actor.
-func MonitoredActorDown(message any) (processID string, reason Reason, ok bool) {
-	msg, ok := ToMessage(message)
-	if !ok || msg.Type != Down {
-		return "", nil, false
-	}
-	return msg.ProcessID, msg.Reason, true
-}
-
-// LinkedActorDown checks if a system Message is about a terminated linked actor.
-func LinkedActorDown(message any) (processID string, reason Reason, ok bool) {
-	msg, ok := ToMessage(message)
-	if !ok || msg.Type != Exit {
-		return "", nil, false
-	}
-	return msg.ProcessID, msg.Reason, true
-}
-
-// IsSystemSignal checks if a system Message is a direct system Signal.
-func IsSystemSignal(message any) (reason Reason, ok bool) {
-	msg, ok := ToMessage(message)
-	if !ok || msg.Type != Signal {
-		return nil, false
-	}
-	return msg.Reason, true
-}

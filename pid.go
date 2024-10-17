@@ -141,7 +141,11 @@ func (p *PID) demonitor(pid *PID) error {
 }
 
 func (p *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
-	afterTimeout, afterFunc := actor.AfterFunc()
+	var afterFunc AfterFunc
+	var afterTimeout time.Duration
+	if afterFuncProvider, ok := actor.(ActorAfterFuncProvider); ok {
+		afterTimeout, afterFunc = afterFuncProvider.AfterFunc()
+	}
 	for {
 		msg, isSysMsg, err := p.receiver.ReceiveTimeout(ctx, afterTimeout)
 		if err != nil {
@@ -181,7 +185,7 @@ func (p *PID) run(ctx context.Context, actor Actor) (*sysmsg.Message, error) {
 
 		err = actor.Receive(ctx, msg)
 		if err != nil {
-			return nil, fmt.Errorf("actor receive: %w", err)
+			return nil, fmt.Errorf("receiver func: %w", err)
 		}
 	}
 }

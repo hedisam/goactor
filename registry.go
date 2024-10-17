@@ -153,12 +153,6 @@ func WhereIs(name string) (*PID, bool) {
 	return pid, ok
 }
 
-// namedPID is used to distinguish a NamedPID from a normal PID.
-type namedPID interface {
-	PID() *PID
-	namedPID()
-}
-
 // NamedPID can be used to find and send message to an actor registered by a name
 type NamedPID string
 
@@ -167,8 +161,6 @@ func (name NamedPID) PID() *PID {
 	pid, _ := WhereIs(string(name))
 	return pid
 }
-
-func (name NamedPID) namedPID() {}
 
 func goroutineID() (string, error) {
 	var buf [32]byte

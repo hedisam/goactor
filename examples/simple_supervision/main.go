@@ -25,16 +25,14 @@ func main() {
 				":alice",
 				supervision.Permanent,
 				func() goactor.Actor {
-					return goactor.NewActor(actorAlice, goactor.WithInitFunc(func(_ context.Context, _ *goactor.PID) error {
-						log.Println("[!] Alice initialised")
-						return nil
-					}))
+					log.Println("[!] Alice spawned")
+					return goactor.ReceiveFunc(aliceReceiver)
 				},
 			),
 		},
 	)
 	if err != nil {
-		log.Fatal("Could not start supervisor:", err)
+		panic(err)
 	}
 
 	err = goactor.Send(context.Background(), goactor.NamedPID(":alice"), "hey alice what's up?")
@@ -66,7 +64,7 @@ func main() {
 	wg.Wait()
 }
 
-func actorAlice(_ context.Context, msg any) error {
+func aliceReceiver(_ context.Context, msg any) error {
 	fmt.Println(":alice received msg:", msg)
 	if msg == ":panic" {
 		panic(msg)
