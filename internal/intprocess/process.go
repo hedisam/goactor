@@ -14,15 +14,22 @@ import (
 	"github.com/hedisam/goactor/sysmsg"
 )
 
-var (
-	// ErrDisposed is returned when this actor is disposed
-	ErrDisposed = errors.New("actor is disposed")
-	// ErrTargetDisposed is returned when target actor is disposed
-	ErrTargetDisposed = errors.New("target actor is disposed")
-)
+type Dispatcher interface {
+	PushMessage(ctx context.Context, msg any) error
+	PushSystemMessage(ctx context.Context, msg any) error
+}
+
+type PID interface {
+	Dispatcher
+	Ref() string
+	AcceptLink(linker PID) error
+	AcceptUnlink(linkerRef string)
+	AcceptMonitor(pid PID) error
+	AcceptDemonitor(monitorRef string)
+}
 
 type Registrar interface {
-	RegisterSelf(pid PID)
+	RegisterSelf(pid *LocalProcess)
 	UnregisterSelf()
 }
 

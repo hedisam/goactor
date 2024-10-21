@@ -8,3 +8,28 @@ message Message {
   bytes data = 1;
   bool is_system_msg = 2;
 }
+
+message SystemRequest {
+  oneof request {
+    Link link = 1;
+    Unlink unlink = 2;
+    Monitor monitor = 3;
+    Demonitor demonitor = 4;
+  }
+}
+
+message Link {
+  string linker_ref = 1;
+}
+
+message Unlink {
+  string linker_ref = 1;
+}
+
+message Monitor {
+  string monitor_ref = 1;
+}
+
+message Demonitor {
+  string monitor_ref = 1;
+}

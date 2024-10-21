@@ -1,7 +1,6 @@
 package mailbox
 
 import (
-	"context"
 	"errors"
 )
 
@@ -17,16 +16,3 @@ var (
 	// ErrReceiveTimeout is returned when timeout occurs while listening for incoming messages
 	ErrReceiveTimeout = errors.New("receive timeout")
 )
-
-type Dispatcher interface {
-	PushMessage(ctx context.Context, msg any) error
-	PushSystemMessage(ctx context.Context, msg any) error
-}
-
-func PushMessage(ctx context.Context, d Dispatcher, msg any) error {
-	return d.PushMessage(ctx, msg)
-}
-
-func PushSystemMessage(ctx context.Context, d Dispatcher, msg any) error {
-	return d.PushSystemMessage(ctx, msg)
-}

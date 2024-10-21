@@ -11,7 +11,7 @@ import (
 	"syscall"
 
 	"github.com/hedisam/goactor"
-	"github.com/hedisam/goactor/examples/require"
+	"github.com/hedisam/goactor/examples/lib/require"
 )
 
 func main() {

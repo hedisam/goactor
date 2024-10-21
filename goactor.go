@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/hedisam/goactor/internal/intprocess"
-	"github.com/hedisam/goactor/internal/mailbox"
 	"github.com/hedisam/goactor/internal/registry"
 )
 
@@ -125,15 +124,7 @@ func Spawn(ctx context.Context, actor Actor) (*PID, error) {
 		}
 	}
 
-	pid, err := intprocess.SpawnLocal(
-		ctx,
-		logger,
-		registry.GetRegistry(),
-		initFunc,
-		actor.Receive,
-		afterFunc,
-		afterTimeout,
-	)
+	pid, err := intprocess.SpawnLocal(ctx, logger, registry.SelfRegistrar(), initFunc, actor.Receive, afterFunc, afterTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("spawn local process: %w", err)
 	}
@@ -150,8 +141,7 @@ func Send(ctx context.Context, d Dispatcher, msg any) error {
 	}
 	pid := d.PID()
 	if pid == nil {
-		_, ok := d.(Named)
-		if ok {
+		if _, ok := d.(Named); ok {
 			return ErrNamedActorNotFound
 		}
 		return ErrNilPID
@@ -161,7 +151,7 @@ func Send(ctx context.Context, d Dispatcher, msg any) error {
 		return registry.ErrSelfDisposed
 	}
 
-	err := mailbox.PushMessage(ctx, pid.internalPID.Dispatcher(), msg)
+	err := pid.internalPID.PushMessage(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("push message via dispatcher: %w", err)
 	}

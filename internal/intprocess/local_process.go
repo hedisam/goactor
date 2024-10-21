@@ -13,44 +13,44 @@ import (
 	"github.com/hedisam/goactor/sysmsg"
 )
 
+var _ PID = &LocalProcess{}
+
+var (
+	// ErrSelfDisposed is returned when this actor is disposed
+	ErrSelfDisposed = errors.New("self actor is disposed")
+	// ErrTargetDisposed is returned when target actor is disposed
+	ErrTargetDisposed = errors.New("target actor is disposed")
+)
+
 type (
 	HandlerFunc func(ctx context.Context, msg any) error
 	AfterFunc   func(context.Context) error
 	InitFunc    func(ctx context.Context) error
 )
 
-type systemMessageAction int
-
-const (
-	systemMessageActionIgnore = iota
-	systemMessageActionPropagate
-	systemMessageActionDelegate
-)
-
 type localReceiver interface {
-	Receive(ctx context.Context) (msg any, sysMsg bool, err error)
 	ReceiveTimeout(ctx context.Context, d time.Duration) (msg any, sysMsg bool, err error)
 	Close()
 }
 
 type LocalProcess struct {
-	logger        *slog.Logger
-	ref           string
-	receiver      localReceiver
-	msgDispatcher mailbox.Dispatcher
-	relations     *relations
+	logger     *slog.Logger
+	ref        string
+	receiver   localReceiver
+	dispatcher Dispatcher
+	relations  *relations
 
 	trapExit     atomic.Bool
 	disposedFlag atomic.Bool
 }
 
-func newLocalProcess(logger *slog.Logger, ref string, r localReceiver, d mailbox.Dispatcher) *LocalProcess {
+func newLocalProcess(logger *slog.Logger, ref string, r localReceiver, d Dispatcher) *LocalProcess {
 	return &LocalProcess{
-		logger:        logger,
-		ref:           ref,
-		receiver:      r,
-		msgDispatcher: d,
-		relations:     newRelations(),
+		logger:     logger,
+		ref:        ref,
+		receiver:   r,
+		dispatcher: d,
+		relations:  newRelations(),
 	}
 }
 
@@ -58,80 +58,108 @@ func (p *LocalProcess) Ref() string {
 	return p.ref
 }
 
-func (p *LocalProcess) Dispatcher() mailbox.Dispatcher {
-	return p.msgDispatcher
+func (p *LocalProcess) PushMessage(ctx context.Context, msg any) error {
+	return p.dispatcher.PushMessage(ctx, msg)
 }
 
-// Disposed reports whether this PID is disposed or not.
-// Disposed actors neither can be linked/monitored nor can receive messages.
-func (p *LocalProcess) disposed() bool {
-	return p == nil || p.disposedFlag.Load()
+func (p *LocalProcess) PushSystemMessage(ctx context.Context, msg any) error {
+	return p.dispatcher.PushSystemMessage(ctx, msg)
 }
 
 func (p *LocalProcess) SetTrapExit(trapExit bool) {
-	p.trapExit.Store(trapExit)
+	if !p.disposed() {
+		p.trapExit.Store(trapExit)
+	}
 }
 
 // Link creates a bidirectional link between the two actors.
 // Linked actors gets notified when the other actor exits. If TrapExit is set (see SetTrapExit), the notification
 // message gets delegated to the user defined receive function otherwise the linked actor terminates as well if the
 // exit reason is anything other than sysmsg.ReasonNormal.
-func (p *LocalProcess) Link(pid PID) error {
+func (p *LocalProcess) Link(linkee PID) error {
 	if p.disposed() {
-		return ErrDisposed
+		return ErrSelfDisposed
 	}
-	if pid.disposed() {
+	err := linkee.AcceptLink(p)
+	if err != nil {
+		return fmt.Errorf("target linkee could not accept link request: %w", err)
+	}
+	p.relations.Add(linkee, relationLinked)
+	return nil
+}
+
+func (p *LocalProcess) AcceptLink(linker PID) error {
+	if p.disposed() {
 		return ErrTargetDisposed
 	}
-	pid.addRelation(p, relationLinked)
-	p.addRelation(pid, relationLinked)
+
+	p.relations.Add(linker, relationLinked)
 	return nil
 }
 
 // Unlink removes the bidirectional link between the two actors.
-func (p *LocalProcess) Unlink(pid PID) error {
+func (p *LocalProcess) Unlink(linkee PID) error {
 	if p.disposed() {
-		return ErrDisposed
+		return ErrSelfDisposed
 	}
-	if !pid.disposed() {
-		pid.remRelation(p.ref, relationLinked)
-	}
-	p.remRelation(pid.Ref(), relationLinked)
+
+	p.relations.Remove(linkee.Ref(), relationLinked)
+	linkee.AcceptUnlink(p.ref)
 	return nil
+}
+
+func (p *LocalProcess) AcceptUnlink(linkerRef string) {
+	if !p.disposed() {
+		p.relations.Remove(linkerRef, relationLinked)
+	}
 }
 
 // Monitor monitors the provided PID.
 // The user defined receive function of monitor actors receive a sysmsg.Down message when a monitored actor goes down.
-func (p *LocalProcess) Monitor(pid PID) error {
+func (p *LocalProcess) Monitor(monitoree PID) error {
 	if p.disposed() {
-		return ErrDisposed
+		return ErrSelfDisposed
 	}
-	if pid.disposed() {
+
+	err := monitoree.AcceptMonitor(p)
+	if err != nil {
+		return fmt.Errorf("target monitoree could not accept monitoring request: %w", err)
+	}
+	p.relations.Add(monitoree, relationMonitored)
+	return nil
+}
+
+func (p *LocalProcess) AcceptMonitor(monitor PID) error {
+	if p.disposed() {
 		return ErrTargetDisposed
 	}
-	pid.addRelation(p, relationMonitor)
-	p.addRelation(pid, relationMonitored)
+
+	p.relations.Add(monitor, relationMonitor)
 	return nil
 }
 
 // Demonitor de-monitors the provided PID.
-func (p *LocalProcess) Demonitor(pid PID) error {
+func (p *LocalProcess) Demonitor(monitoree PID) error {
 	if p.disposed() {
-		return ErrDisposed
+		return ErrSelfDisposed
 	}
-	if !pid.disposed() {
-		pid.remRelation(p.ref, relationMonitor)
-	}
-	p.remRelation(pid.Ref(), relationMonitored)
+
+	p.relations.Remove(monitoree.Ref(), relationMonitored)
+	monitoree.AcceptDemonitor(p.ref)
 	return nil
 }
 
-func (p *LocalProcess) addRelation(pid PID, typ relationType) {
-	p.relations.Add(pid, typ)
+func (p *LocalProcess) AcceptDemonitor(monitorRef string) {
+	if !p.disposed() {
+		p.relations.Remove(monitorRef, relationMonitor)
+	}
 }
 
-func (p *LocalProcess) remRelation(ref string, typ relationType) {
-	p.relations.Remove(ref, typ)
+// Disposed reports whether this PID is disposed or not.
+// Disposed actors neither can be linked/monitored nor can receive messages.
+func (p *LocalProcess) disposed() bool {
+	// todo: anyone calling disposed() should probably lock the disposedFlag
+	return p == nil || p.disposedFlag.Load()
 }
 
 func (p *LocalProcess) run(ctx context.Context, msgHandler HandlerFunc, afterFunc AfterFunc, afterTimeout time.Duration) (*sysmsg.Message, error) {
@@ -154,20 +182,15 @@ func (p *LocalProcess) run(ctx context.Context, msgHandler HandlerFunc, afterFun
 			}
 		}
 		if isSysMsg {
-			sysMsg, ok := msg.(*sysmsg.Message)
-			if !ok {
-				return nil, fmt.Errorf("non system message received to be handled by system message handler: %T, %+v", msg, msg)
-			}
-			action, err := p.handleSystemMessage(sysMsg)
-			if err != nil {
+			delegate, propagate, err := p.handleSystemMessage(msg)
+			switch {
+			case err != nil:
 				return nil, fmt.Errorf("handle system message: %w", err)
-			}
-			switch action {
-			case systemMessageActionPropagate:
-				return sysMsg, nil
-			case systemMessageActionDelegate:
-				msg = sysMsg
-			case systemMessageActionIgnore:
+			case propagate != nil:
+				return propagate, nil
+			case delegate != nil:
+				msg = delegate
+			default:
 				continue
 			}
 		}
@@ -179,7 +202,12 @@ func (p *LocalProcess) run(ctx context.Context, msgHandler HandlerFunc, afterFun
 	}
 }
 
-func (p *LocalProcess) handleSystemMessage(msg *sysmsg.Message) (systemMessageAction, error) {
+func (p *LocalProcess) handleSystemMessage(sysMsg any) (delegate *sysmsg.Message, propagate *sysmsg.Message, err error) {
+	msg, ok := sysMsg.(*sysmsg.Message)
+	if !ok {
+		return nil, nil, fmt.Errorf("non system message received to be handled by system message handler: %T, %+v", msg, msg)
+	}
+
 	trapExit := p.trapExit.Load()
 
 	switch msg.Type {
@@ -187,26 +215,27 @@ func (p *LocalProcess) handleSystemMessage(msg *sysmsg.Message) (systemMessageAc
 		// it's a direct termination signal
 		if errors.Is(msg.Reason, sysmsg.ReasonKill) || !trapExit {
 			// a direct kill signal cannot be delegated to the user even if trap_exit is set
-			return systemMessageActionPropagate, nil
+			return nil, msg, nil
 		}
-		return systemMessageActionDelegate, nil
+		return msg, nil, nil
 	case sysmsg.Down:
 		// a monitored actor went down
 		p.relations.Remove(msg.ProcessID, relationMonitored)
-		return systemMessageActionDelegate, nil
+		return msg, nil, nil
 	case sysmsg.Exit:
 		// a linked actor reported exit for whatever reason
 		p.relations.Remove(msg.ProcessID, relationLinked)
 		switch {
 		case trapExit:
-			return systemMessageActionDelegate, nil
+			return msg, nil, nil
 		case errors.Is(msg.Reason, sysmsg.ReasonNormal):
-			return systemMessageActionIgnore, nil
+			// ignore the message
+			return nil, nil, nil
 		default:
-			return systemMessageActionPropagate, nil
+			return msg, nil, nil
 		}
 	default:
-		return systemMessageActionIgnore, fmt.Errorf("unknown system message type received: %+v", msg)
+		return nil, nil, fmt.Errorf("system message with unknown type received: %+v", msg)
 	}
 }
 
@@ -261,7 +290,7 @@ func (p *LocalProcess) notify(ctx context.Context, msgType sysmsg.Type, reason s
 	notify := func(who PID) error {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		return mailbox.PushSystemMessage(ctx, who.Dispatcher(), &sysmsg.Message{
+		return who.PushSystemMessage(ctx, &sysmsg.Message{
 			Type:      msgType,
 			ProcessID: p.ref,
 			Reason:    reason,

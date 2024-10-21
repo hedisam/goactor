@@ -1,16 +1,23 @@
 package intprocess
 
-import "github.com/hedisam/goactor/internal/mailbox"
+import (
+	"context"
+	"fmt"
+
+	clusteringv1 "github.com/hedisam/goactor/gen/clustering/v1"
+)
+
+var _ PID = &NodeProcess{}
 
 type NodeProcess struct {
-	ref           string
-	msgDispatcher mailbox.Dispatcher
+	ref        string
+	dispatcher Dispatcher
 }
 
-func NewNodeProcess(ref string, dispatcher mailbox.Dispatcher) *NodeProcess {
+func NewNodeProcess(ref string, dispatcher Dispatcher) *NodeProcess {
 	return &NodeProcess{
-		ref:           ref,
-		msgDispatcher: dispatcher,
+		ref:        ref,
+		dispatcher: dispatcher,
 	}
 }
 
@@ -18,43 +25,70 @@ func (p *NodeProcess) Ref() string {
 	return p.ref
 }
 
-func (p *NodeProcess) Link(pid PID) error {
-	//TODO implement me
-	panic("implement me")
+func (p *NodeProcess) PushMessage(ctx context.Context, msg any) error {
+	return p.dispatcher.PushMessage(ctx, msg)
 }
 
-func (p *NodeProcess) Unlink(pid PID) error {
-	//TODO implement me
-	panic("implement me")
+func (p *NodeProcess) PushSystemMessage(ctx context.Context, msg any) error {
+	return p.dispatcher.PushSystemMessage(ctx, msg)
 }
 
-func (p *NodeProcess) Monitor(pid PID) error {
-	//TODO implement me
-	panic("implement me")
+func (p *NodeProcess) AcceptLink(linker PID) error {
+	err := p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemRequest{
+		Request: &clusteringv1.SystemRequest_Link{
+			Link: &clusteringv1.Link{
+				LinkerRef: linker.Ref(),
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("send accept link request to target node actor: %w", err)
+	}
+
+	return nil
 }
 
-func (p *NodeProcess) Demonitor(pid PID) error {
-	//TODO implement me
-	panic("implement me")
+func (p *NodeProcess) AcceptUnlink(linkerRef string) {
+	_ = p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemRequest{
+		Request: &clusteringv1.SystemRequest_Unlink{
+			Unlink: &clusteringv1.Unlink{
+				LinkerRef: linkerRef,
+			},
+		},
+	})
+	//if err != nil {
+	//	return fmt.Errorf("send accept unlink request to target node actor: %w", err)
+	//}
+	//
+	//return nil
 }
 
-func (p *NodeProcess) SetTrapExit(trapExit bool) {}
+func (p *NodeProcess) AcceptMonitor(monitor PID) error {
+	err := p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemRequest{
+		Request: &clusteringv1.SystemRequest_Monitor{
+			Monitor: &clusteringv1.Monitor{
+				MonitorRef: monitor.Ref(),
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("send accept monitor request to target node actor: %w", err)
+	}
 
-func (p *NodeProcess) Dispatcher() mailbox.Dispatcher {
-	return p.msgDispatcher
+	return nil
 }
 
-func (p *NodeProcess) disposed() bool {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (p *NodeProcess) addRelation(pid PID, typ relationType) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (p *NodeProcess) remRelation(ref string, typ relationType) {
-	//TODO implement me
-	panic("implement me")
+func (p *NodeProcess) AcceptDemonitor(monitorRef string) {
+	_ = p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemRequest{
+		Request: &clusteringv1.SystemRequest_Demonitor{
+			Demonitor: &clusteringv1.Demonitor{
+				MonitorRef: monitorRef,
+			},
+		},
+	})
+	//if err != nil {
+	//	return fmt.Errorf("send accept demonitor request to target node actor: %w", err)
+	//}
+	//
+	//return nil
 }

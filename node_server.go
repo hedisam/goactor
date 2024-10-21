@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	clusteringv1 "github.com/hedisam/goactor/gen/clustering/v1"
+	"github.com/hedisam/goactor/internal/intprocess"
 	"github.com/hedisam/goactor/internal/registry"
 )
 
@@ -83,7 +84,7 @@ func (s *localNodeServer) Spawn(ctx context.Context, req *clusteringv1.SpawnRequ
 }
 
 func (s *localNodeServer) Send(ctx context.Context, req *clusteringv1.SendRequest) (*clusteringv1.SendResponse, error) {
-	pid, ok := registry.GetRegistry().PIDByRef(req.GetRef())
+	pid, ok := registry.LocalProcessByRef(req.GetRef())
 	if !ok {
 		return nil, fmt.Errorf("no running actor available with the given ID %q", req.GetRef())
 	}
@@ -93,12 +94,46 @@ func (s *localNodeServer) Send(ctx context.Context, req *clusteringv1.SendReques
 		return nil, fmt.Errorf("could not unmarshal message: %w", err)
 	}
 
+	if systemRequest, ok := msg.(*clusteringv1.SystemRequest); ok {
+		err = s.handleSystemRequest(pid, systemRequest)
+		if err != nil {
+			return nil, fmt.Errorf("handle system request: %w", err)
+		}
+		return &clusteringv1.SendResponse{}, nil
+	}
+
 	err = Send(ctx, &PID{internalPID: pid}, msg)
 	if err != nil {
 		return nil, fmt.Errorf("send to pid: %w", err)
 	}
 
 	return &clusteringv1.SendResponse{}, nil
+}
+
+func (s *localNodeServer) handleSystemRequest(pid *intprocess.LocalProcess, req *clusteringv1.SystemRequest) error {
+	// todo: need to have a remote type but local process for the remote pid
+	switch req.GetRequest().(type) {
+	case *clusteringv1.SystemRequest_Link:
+		err := pid.AcceptLink(nil)
+		if err != nil {
+			return fmt.Errorf("linkee accept link: %w", err)
+		}
+		return nil
+	case *clusteringv1.SystemRequest_Unlink:
+		pid.AcceptUnlink(req.GetUnlink().GetLinkerRef())
+		return nil
+	case *clusteringv1.SystemRequest_Monitor:
+		err := pid.AcceptMonitor(nil)
+		if err != nil {
+			return fmt.Errorf("monitoree accept monitor: %w", err)
+		}
+		return nil
+	case *clusteringv1.SystemRequest_Demonitor:
+		pid.AcceptDemonitor(req.GetMonitor().GetMonitorRef())
+		return nil
+	default:
+		return fmt.Errorf("unknown node system request received: %T", req.GetRequest())
+	}
 }
 
 func (s *localNodeServer) getRegisteredActorFactory(sig string) (ActorFactory, bool) {

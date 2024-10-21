@@ -24,81 +24,81 @@ var (
 	ErrSelfDisposed = errors.New("self pid not found, probably disposed")
 )
 
-var reg *Registry
+var reg *ProcessRegistry
 
-// Registry is used to name goactor processes.
-type Registry struct {
+// ProcessRegistry is used to name goactor processes.
+type ProcessRegistry struct {
 	// used for registering actors with a name
 	nameToPID map[string]intprocess.PID
-	pidToName map[string]string
+	refToName map[string]string
 	nameMu    sync.RWMutex
 
 	// used for linking processes and other operations limited to a running actor itself e.g. setting trap_exit
-	gIDToPID map[string]intprocess.PID
-	gIDMu    sync.RWMutex
+	gIDToLocalProcess map[string]*intprocess.LocalProcess
+	gIDMu             sync.RWMutex
 
-	// used for remote actors
-	refToPID map[string]intprocess.PID
-	refMu    sync.RWMutex
+	// used by the node server
+	refToLocalProcess map[string]*intprocess.LocalProcess
+	localProcessesRef sync.RWMutex
 }
 
 func InitRegistry(size int) {
-	reg = &Registry{
-		nameToPID: make(map[string]intprocess.PID, size),
-		pidToName: make(map[string]string, size),
-		gIDToPID:  make(map[string]intprocess.PID, size),
-		refToPID:  make(map[string]intprocess.PID, size),
+	reg = &ProcessRegistry{
+		nameToPID:         make(map[string]intprocess.PID, size),
+		refToName:         make(map[string]string, size),
+		gIDToLocalProcess: make(map[string]*intprocess.LocalProcess, size),
+		refToLocalProcess: make(map[string]*intprocess.LocalProcess, size),
 	}
 }
 
-func GetRegistry() *Registry {
+func SelfRegistrar() *ProcessRegistry {
 	return reg
 }
 
-func (r *Registry) RegisterSelf(pid intprocess.PID) {
+func (r *ProcessRegistry) RegisterSelf(pid *intprocess.LocalProcess) {
 	gid, err := goroutineID()
 	if err != nil {
 		panic(err)
 	}
 	r.gIDMu.Lock()
-	r.gIDToPID[gid] = pid
+	r.gIDToLocalProcess[gid] = pid
 	r.gIDMu.Unlock()
 
-	r.refMu.Lock()
-	r.refToPID[pid.Ref()] = pid
-	r.refMu.Unlock()
+	r.localProcessesRef.Lock()
+	r.refToLocalProcess[pid.Ref()] = pid
+	r.localProcessesRef.Unlock()
 }
 
-func (r *Registry) UnregisterSelf() {
+func (r *ProcessRegistry) UnregisterSelf() {
 	gid, _ := goroutineID()
 	r.gIDMu.Lock()
-	pid := r.gIDToPID[gid]
-	delete(r.gIDToPID, gid)
+	pid := r.gIDToLocalProcess[gid]
+	delete(r.gIDToLocalProcess, gid)
 	r.gIDMu.Unlock()
 
-	r.refMu.Lock()
-	delete(r.refToPID, pid.Ref())
-	r.refMu.Unlock()
+	r.localProcessesRef.Lock()
+	delete(r.refToLocalProcess, pid.Ref())
+	r.localProcessesRef.Unlock()
 }
 
-func (r *Registry) PIDByRef(ref string) (intprocess.PID, bool) {
-	r.refMu.RLock()
-	defer r.refMu.RUnlock()
+func LocalProcessByRef(ref string) (*intprocess.LocalProcess, bool) {
+	reg.localProcessesRef.RLock()
+	defer reg.localProcessesRef.RUnlock()
 
-	pid, ok := r.refToPID[ref]
+	pid, ok := reg.refToLocalProcess[ref]
 	return pid, ok
 }
 
-func (r *Registry) Self() (intprocess.PID, error) {
+func Self() (*intprocess.LocalProcess, error) {
 	gid, err := goroutineID()
 	if err != nil {
 		panic(err)
 	}
 
-	r.gIDMu.RLock()
-	defer r.gIDMu.RUnlock()
+	reg.gIDMu.RLock()
+	defer reg.gIDMu.RUnlock()
 
-	pid, ok := r.gIDToPID[gid]
+	pid, ok := reg.gIDToLocalProcess[gid]
 	if !ok {
 		return nil, ErrSelfDisposed
 	}
@@ -121,7 +121,7 @@ func RegisterNamed(name string, pid intprocess.PID) error {
 	if ok {
 		return fmt.Errorf("name already taken by %q", regPID.Ref())
 	}
-	regName, ok := reg.pidToName[pid.Ref()]
+	regName, ok := reg.refToName[pid.Ref()]
 	if ok {
 		return fmt.Errorf("pid has already been given another name %q", regName)
 	}
@@ -145,7 +145,7 @@ func UnregisterNamed(name string) {
 		return
 	}
 	delete(reg.nameToPID, name)
-	delete(reg.pidToName, pid.Ref())
+	delete(reg.refToName, pid.Ref())
 }
 
 // WhereIs returns the associated PID with the given name.

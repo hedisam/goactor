@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/hedisam/goactor"
-	"github.com/hedisam/goactor/examples/require"
+	"github.com/hedisam/goactor/examples/lib/require"
 	"github.com/hedisam/goactor/supervision"
 	"github.com/hedisam/goactor/supervision/strategy"
 )

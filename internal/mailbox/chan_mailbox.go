@@ -29,7 +29,7 @@ func NewChanMailbox() *ChanMailbox {
 // It stops listening for new messages on timeout. The timeout is refreshed each time a new message is received.
 func (m *ChanMailbox) ReceiveTimeout(ctx context.Context, d time.Duration) (msg any, sysMsg bool, err error) {
 	if d <= 0 {
-		return m.Receive(ctx)
+		return m.receive(ctx)
 	}
 
 	if m.closed.Load() {
@@ -52,9 +52,9 @@ func (m *ChanMailbox) ReceiveTimeout(ctx context.Context, d time.Duration) (msg 
 	}
 }
 
-// Receive listens for incoming messages to handle them using the provided handler.
+// receive listens for incoming messages to handle them using the provided handler.
 // It stops listening if the context is canceled and returns ErrMailboxDisposed if the mailbox is disposed.
-func (m *ChanMailbox) Receive(ctx context.Context) (msg any, sysMsg bool, err error) {
+func (m *ChanMailbox) receive(ctx context.Context) (msg any, sysMsg bool, err error) {
 	if m.closed.Load() {
 		return nil, false, ErrClosedMailbox
 	}
