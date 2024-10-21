@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package clustering.v1;
+
+option go_package = "github.com/hedisam/goactor/gen/protos/clustering/v1;clusteringv1";
+
+message Message {
+  bytes data = 1;
+  bool is_system_msg = 2;
+}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hedisam/goactor"
+	"github.com/hedisam/goactor/examples/require"
 	"github.com/hedisam/goactor/supervision"
 	"github.com/hedisam/goactor/supervision/strategy"
 )
@@ -43,9 +44,7 @@ func main() {
 			),
 		},
 	)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(err)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -56,13 +55,13 @@ func main() {
 		for {
 			select {
 			case <-t.C:
-				err = goactor.Send(ctx, goactor.NamedPID("Alice"), "hi there")
+				err = goactor.Send(ctx, goactor.Named("Alice"), "hi there")
 				if err != nil {
-					if errors.Is(err, goactor.ErrActorNotFound) {
+					if errors.Is(err, goactor.ErrNamedActorNotFound) {
 						fmt.Println("[!] Actor 'Alice' not found; parent supervisor exited since child supervisor got restarted too many times")
 						return
 					}
-					panic(err)
+					require.NoError(err)
 				}
 			}
 		}
@@ -70,14 +69,12 @@ func main() {
 
 	wg.Wait()
 
-	err = goactor.Send(ctx, goactor.NamedPID("Bob"), "Hey Bob, you there?")
-	if err != nil {
-		if errors.Is(err, goactor.ErrActorNotFound) {
-			fmt.Println("[!] Bob is not available either")
-			return
-		}
-		panic(err)
+	err = goactor.Send(ctx, goactor.Named("Bob"), "Hey Bob, you there?")
+	if errors.Is(err, goactor.ErrNamedActorNotFound) {
+		fmt.Println("[!] Bob is not available either")
+		return
 	}
+	require.NoError(err)
 }
 
 type panicActor struct {
@@ -107,8 +104,4 @@ func (a *panicActor) Init(context.Context, *goactor.PID) error {
 		fmt.Println("Bob initialised. If not first init, then the child supervisor has been restarted!")
 	}
 	return nil
-}
-
-func (a *panicActor) AfterFunc() (timeout time.Duration, afterFunc goactor.AfterFunc) {
-	return 0, nil
 }

@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/hedisam/goactor"
+	"github.com/hedisam/goactor/examples/require"
 )
 
 func main() {
@@ -20,32 +20,24 @@ func main() {
 		wg:      wg,
 		timeout: 4 * time.Second,
 	}
-	_, _ = goactor.Spawn(ctx, simpleActor)
+	pid, err := goactor.Spawn(ctx, simpleActor)
+	require.NoError(err)
 
-	err := goactor.Send(ctx, simpleActor, "Hey what's up?")
-	if err != nil {
-		panic(err)
-	}
+	err = goactor.Send(ctx, pid, "Hey what's up?")
+	require.NoError(err)
+
 	time.Sleep(1200 * time.Millisecond)
-	err = goactor.Send(ctx, simpleActor.self, "Here's my second Hi :)")
-	if err != nil {
-		panic(err)
-	}
+	err = goactor.Send(ctx, simpleActor, "Here's my second Hi :)")
+	require.NoError(err)
 
-	err = goactor.Register(":simple", simpleActor)
-	if err != nil {
-		panic(err)
-	}
+	err = goactor.Register(":simple", pid)
+	require.NoError(err)
 
-	err = goactor.Send(ctx, goactor.NamedPID(":simple"), "You are now registered :yay")
-	if err != nil {
-		panic(err)
-	}
+	err = goactor.Send(ctx, goactor.Named(":simple"), "You are now registered :yay")
+	require.NoError(err)
 
-	err = goactor.Send(ctx, goactor.NamedPID(":not_found"), "This message won't make it")
-	if err == nil {
-		log.Fatal("Expected to get error when sending to a non existent named actor but got nil")
-	}
+	err = goactor.Send(ctx, goactor.Named(":404"), "This message won't make it")
+	require.Error(err, "expected to get an error when sending to a non existent named actor")
 	fmt.Printf("[!] SendNamed Error: %s\n", err)
 
 	wg.Wait()
@@ -75,9 +67,9 @@ func (s *SimpleActor) AfterFunc() (time.Duration, goactor.AfterFunc) {
 	}
 }
 
-func (s *SimpleActor) Init(ctx context.Context, pid *goactor.PID) error {
-	s.self = pid
-	fmt.Printf("[!] Self PID set: %s\n", pid)
+func (s *SimpleActor) Init(ctx context.Context) error {
+	s.self = goactor.Self()
+	fmt.Printf("[!] Self PID set: %s\n", s.self.Ref())
 	return nil
 }
 

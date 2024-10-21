@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package clustering.v1;
+
+import "clustering/v1/clustering.proto";
+
+option go_package = "github.com/hedisam/goactor/gen/protos/clustering/v1;clusteringv1";
+
+service NodeService {
+  rpc Spawn(SpawnRequest) returns (SpawnResponse);
+  rpc Send(SendRequest) returns (SendResponse);
+}
+
+message SpawnRequest {
+  string actor_signature = 1;
+  bytes actor_data = 2;
+}
+
+message SpawnResponse {
+  string ref = 1;
+}
+
+message SendRequest {
+  string ref = 2;
+  Message message = 3;
+}
+
+message SendResponse {}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hedisam/goactor"
+	"github.com/hedisam/goactor/examples/require"
 	"github.com/hedisam/goactor/sysmsg"
 )
 
@@ -24,13 +25,9 @@ func main() {
 	_, err := goactor.Spawn(ctx, &Parent{
 		child: child,
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(err)
 	err = goactor.Send(ctx, child, "go to sleep")
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(err)
 
 	<-ctx.Done()
 	fmt.Println("[!] Sleeping done, exiting main func")

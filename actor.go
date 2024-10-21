@@ -25,7 +25,7 @@ func (r ReceiveFunc) Receive(ctx context.Context, msg any) error {
 // upon spawning the Actor to let the user perform any one-time initialisation they need.
 type ActorInitializer interface {
 	// Init is called before spawning the Actor when the PID is available.
-	Init(ctx context.Context, pid *PID) error
+	Init(ctx context.Context) error
 }
 
 // AfterFunc defines the After func signature which can be provided to be called if no messages are received within

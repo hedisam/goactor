@@ -10,12 +10,13 @@ import (
 	"time"
 
 	"github.com/hedisam/goactor"
-	"github.com/hedisam/goactor/internal/ringbuffer"
+	"github.com/hedisam/goactor/supervision/internal/ringbuffer"
 	"github.com/hedisam/goactor/supervision/strategy"
 	"github.com/hedisam/goactor/sysmsg"
 )
 
 var _ goactor.Actor = &supervisor{}
+var _ goactor.ActorInitializer = &supervisor{}
 
 var (
 	// ErrReachedMaxRestartIntensity is returned when too many restarts occur within the specified time window.
@@ -30,7 +31,6 @@ type activeChildInfo struct {
 
 // supervisor is a supervisor Actor. It implements the goactor.Actor interface.
 type supervisor struct {
-	self     *goactor.PID
 	name     string
 	strategy *strategy.Strategy
 	// nameToChild holds the raw ChildSpec information which is immutable.
@@ -44,9 +44,8 @@ type supervisor struct {
 }
 
 // Init initialises the supervisor by spawning all the children.
-func (s *supervisor) Init(ctx context.Context, self *goactor.PID) (err error) {
+func (s *supervisor) Init(ctx context.Context) (err error) {
 	goactor.GetLogger().Debug("Initialising supervisor", slog.String("name", s.name))
-	s.self = self
 	s.idToActiveChild = make(map[string]*activeChildInfo, len(s.nameToChild))
 	s.nameToActivePID = make(map[string]string, len(s.nameToChild))
 	s.restarts = ringbuffer.New[time.Time](s.strategy.MaxRestarts())
@@ -151,13 +150,6 @@ func (s *supervisor) Receive(ctx context.Context, message any) (err error) {
 	return nil
 }
 
-// AfterFunc implements goactor.Actor.
-func (s *supervisor) AfterFunc() (timeout time.Duration, afterFunc goactor.AfterFunc) {
-	return 0, func(ctx context.Context) error {
-		return nil
-	}
-}
-
 func (s *supervisor) shouldRestartChild(spec ChildSpec, reason sysmsg.Reason) bool {
 	switch spec.RestartType() {
 	case Permanent:
@@ -207,8 +199,8 @@ func (s *supervisor) startChild(ctx context.Context, name string) error {
 }
 
 func (s *supervisor) registerChild(info *activeChildInfo) error {
-	s.nameToActivePID[info.spec.Name()] = info.pid.ID()
-	s.idToActiveChild[info.pid.ID()] = info
+	s.nameToActivePID[info.spec.Name()] = info.pid.Ref()
+	s.idToActiveChild[info.pid.Ref()] = info
 	err := goactor.Link(info.pid)
 	if err != nil {
 		return fmt.Errorf("link to child: %w", err)
@@ -223,7 +215,7 @@ func (s *supervisor) registerChild(info *activeChildInfo) error {
 func (s *supervisor) unregisterChild(activeChild *activeChildInfo) {
 	goactor.Unregister(activeChild.spec.Name())
 	_ = goactor.Unlink(activeChild.pid)
-	delete(s.idToActiveChild, activeChild.pid.ID())
+	delete(s.idToActiveChild, activeChild.pid.Ref())
 	delete(s.nameToActivePID, activeChild.spec.Name())
 }
 

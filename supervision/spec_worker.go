@@ -11,19 +11,15 @@ import (
 
 var _ ChildSpec = &WorkerSpec{}
 
-// ActorFactory is what expected by a WorkerSpec. It's necessary to have an ActorFactory that can create a fresh
-// instance of the Actor whenever the supervisor restarts the processes.
-type ActorFactory func() goactor.Actor
-
 // WorkerSpec holds the configuration for spawning a worker child.
 type WorkerSpec struct {
 	name         string
-	actorFactory ActorFactory
+	actorFactory goactor.ActorFactory
 	restartType  RestartType
 }
 
 // NewWorkerSpec returns a new goactor.Actor child spec.
-func NewWorkerSpec(name string, restartType RestartType, af ActorFactory) *WorkerSpec {
+func NewWorkerSpec(name string, restartType RestartType, af goactor.ActorFactory) *WorkerSpec {
 	return &WorkerSpec{
 		name:         strings.TrimSpace(name),
 		actorFactory: af,

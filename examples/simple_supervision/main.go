@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/hedisam/goactor/examples/require"
 	"log"
 	"sync"
 	"time"
@@ -35,10 +36,8 @@ func main() {
 		panic(err)
 	}
 
-	err = goactor.Send(context.Background(), goactor.NamedPID(":alice"), "hey alice what's up?")
-	if err != nil {
-		panic(err)
-	}
+	err = goactor.Send(context.Background(), goactor.Named(":alice"), "hey alice what's up?")
+	require.NoError(err)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -49,13 +48,13 @@ func main() {
 		for {
 			select {
 			case <-t.C:
-				err = goactor.Send(context.Background(), goactor.NamedPID(":alice"), ":panic")
+				err = goactor.Send(context.Background(), goactor.Named(":alice"), ":panic")
 				if err != nil {
-					if errors.Is(err, goactor.ErrActorNotFound) {
+					if errors.Is(err, goactor.ErrNamedActorNotFound) {
 						log.Println("actor not found")
 						return
 					}
-					panic(err)
+					require.NoError(err)
 				}
 			}
 		}

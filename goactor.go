@@ -4,16 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/hedisam/goactor/internal/mailbox"
-	"github.com/hedisam/goactor/sysmsg"
 	"log/slog"
 	"os"
-	"sync/atomic"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/hedisam/goactor/internal/intprocess"
+	"github.com/hedisam/goactor/internal/mailbox"
+	"github.com/hedisam/goactor/internal/registry"
 )
 
 var (
-	// ErrActorNotFound is returned when an ActorHandler cannot be found by a given name.
-	ErrActorNotFound = errors.New("no actor was found with the given name")
+	// ErrNamedActorNotFound is returned when an Actor cannot be found by a given name.
+	ErrNamedActorNotFound = errors.New("no actor was found with the given name")
+	// ErrNilDispatcher is returned with a nil dispatcher is used for sending a message
+	ErrNilDispatcher = errors.New("cannot send message via a nil dispatcher")
 	// ErrNilPID is returned when trying to send a message using a nil PID
 	ErrNilPID = errors.New("cannot send message via a nil PID")
 )
@@ -22,9 +28,35 @@ var (
 	logger *slog.Logger
 )
 
+// ActorFactory is what expected by a supervisor WorkerSpec as well as a remote actor type registrar.
+// It's necessary to have an ActorFactory that can create a fresh
+// instance of the Actor whenever the supervisor restarts the process or when the node server spawns a new actor.
+type ActorFactory func() Actor
+
 func init() {
 	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
-	initRegistry()
+
+	var size int
+	if sizeEnvVar := strings.TrimSpace(os.Getenv(registry.SizeEnvVar)); sizeEnvVar != "" {
+		s, err := strconv.Atoi(sizeEnvVar)
+		if err != nil {
+			logger.Warn("Could not convert registry size env var value to int, using the default value",
+				"error", err,
+				slog.String("env_var", registry.SizeEnvVar),
+				slog.Int("default_registry_size", registry.DefaultSize),
+			)
+			s = registry.DefaultSize
+		}
+		size = s
+	}
+	registry.InitRegistry(size)
+
+	ns, err := startLocalNodeServer()
+	if err != nil {
+		logger.Error("Failed to enable clustering", "error", err)
+		os.Exit(1)
+	}
+	initLocalNode(ns)
 }
 
 // SetLogHandler can be used to set a custom (non slog) log handler for the entire package.
@@ -39,173 +71,99 @@ func GetLogger() *slog.Logger {
 	return logger
 }
 
-// ProcessIdentifier defines a Process Identifier aka PID. It is used to communicate with an Actor.
-type ProcessIdentifier interface {
+// Dispatcher defines an interface used for sending messages.
+type Dispatcher interface {
+	// PID the process PID to send the message to.
 	PID() *PID
+}
+
+// Named can be used to find and send a message to an actor registered by a name.
+// It returns and invalid with PID if an actor with the given name can be found.
+type Named string
+
+// PID implements Dispatcher. It returns nil if no actor can be found with the given name.
+func (named Named) PID() *PID {
+	pid, found := registry.WhereIs(string(named))
+	if !found {
+		return nil
+	}
+	return &PID{
+		internalPID: pid,
+	}
+}
+
+// PID holds the internal pid. It is created when a process is created and can be used for interacting with it.
+type PID struct {
+	internalPID intprocess.PID
+}
+
+// PID implements Dispatcher.
+func (pid *PID) PID() *PID {
+	return pid
+}
+
+// Ref returns the process's unique reference ID.
+func (pid *PID) Ref() string {
+	return pid.internalPID.Ref()
 }
 
 // Spawn spawns the provided Actor and returns the corresponding Process Identifier.
 // The provided actor can optionally implement ActorInitializer and ActorAfterFuncProvider interfaces.
 func Spawn(ctx context.Context, actor Actor) (*PID, error) {
-	m := mailbox.NewChanMailbox()
-	pid := newPID(m, m)
-	initCond := newChanCondOnce[error]()
+	var initFunc intprocess.InitFunc = func(ctx context.Context) error { return nil }
+	var afterFunc intprocess.AfterFunc = func(ctx context.Context) error { return nil }
+	var afterTimeout time.Duration
 
-	go func() {
-		var err error
-		var toPropagate *sysmsg.Message
-		defer func() {
-			r := recover()
-			pid.dispose(ctx, toPropagate, err, r)
-
-			if !initCond.Fired() {
-				// we must have either an error or recovered panic from the init function.
-				if r != nil {
-					err = errors.Join(err, fmt.Errorf("init func failed with panic: %v", r))
-				}
-				initCond.Signal(err)
-			}
-		}()
-
-		registry.registerSelf(pid)
-		defer registry.unregisterSelf()
-
-		if initializer, ok := actor.(ActorInitializer); ok {
-			err = initializer.Init(ctx, pid)
-			if err != nil {
-				return
-			}
+	if initializer, ok := actor.(ActorInitializer); ok {
+		initFunc = initializer.Init
+	}
+	if afterFuncProvider, ok := actor.(ActorAfterFuncProvider); ok {
+		var af AfterFunc
+		afterTimeout, af = afterFuncProvider.AfterFunc()
+		afterFunc = func(ctx context.Context) error {
+			return af(ctx)
 		}
-		initCond.Signal(nil)
-		toPropagate, err = pid.run(ctx, actor)
-	}()
-
-	err := initCond.Wait()
-	if err != nil {
-		return nil, fmt.Errorf("init actor: %w", err)
 	}
 
-	return pid, nil
+	pid, err := intprocess.SpawnLocal(
+		ctx,
+		logger,
+		registry.GetRegistry(),
+		initFunc,
+		actor.Receive,
+		afterFunc,
+		afterTimeout,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("spawn local process: %w", err)
+	}
+
+	return &PID{
+		internalPID: pid,
+	}, nil
 }
 
 // Send sends a message to an ActorHandler with the provided PID.
-func Send(ctx context.Context, processIdentifier ProcessIdentifier, msg any) error {
-	pid := processIdentifier.PID()
+func Send(ctx context.Context, d Dispatcher, msg any) error {
+	if d == nil {
+		return ErrNilDispatcher
+	}
+	pid := d.PID()
 	if pid == nil {
-		if named, ok := processIdentifier.(NamedPID); ok {
-			return fmt.Errorf("%w: %q", ErrActorNotFound, named)
+		_, ok := d.(Named)
+		if ok {
+			return ErrNamedActorNotFound
 		}
 		return ErrNilPID
 	}
+	if pid.internalPID == nil {
+		// should only happen if the PID has been retrieved using the Self function within a disposed actor.
+		return registry.ErrSelfDisposed
+	}
 
-	err := pid.dispatcher.PushMessage(ctx, msg)
+	err := mailbox.PushMessage(ctx, pid.internalPID.Dispatcher(), msg)
 	if err != nil {
 		return fmt.Errorf("push message via dispatcher: %w", err)
 	}
 	return nil
-}
-
-// Link links self to the provided target PID.
-// Link can only be called from the running Actor e.g. from the actor's Init, Receive, or After functions.
-func Link(to *PID) error {
-	self, err := registry.self()
-	if err != nil {
-		return fmt.Errorf("get self pid: %w", err)
-	}
-
-	err = self.link(to)
-	if err != nil {
-		return fmt.Errorf("link self to target pid: %w", err)
-	}
-	return nil
-}
-
-// Unlink unlinks self from the linkee.
-// Unlink can only be called from the running Actor e.g. from the actor's Init, Receive, or After functions.
-func Unlink(linkee *PID) error {
-	self, err := registry.self()
-	if err != nil {
-		return fmt.Errorf("get self pid: %w", err)
-	}
-
-	err = self.unlink(linkee)
-	if err != nil {
-		return fmt.Errorf("unlink self from linkee: %w", err)
-	}
-	return nil
-}
-
-// Monitor monitors the provided PID.
-// The user defined receive function of monitor actors receive a sysmsg.Down message when a monitored actor goes down.
-// Monitor can only be called from the running Actor e.g. from the actor's Init, Receive, or After functions.
-func Monitor(pid *PID) error {
-	self, err := registry.self()
-	if err != nil {
-		return fmt.Errorf("get self pid: %w", err)
-	}
-
-	err = self.monitor(pid)
-	if err != nil {
-		return fmt.Errorf("monitor target pid: %w", err)
-	}
-	return nil
-}
-
-// Demonitor de-monitors the provided PID.
-// Demonitor can only be called from the running Actor e.g. from the actor's Init, Receive, or After functions.
-func Demonitor(pid *PID) error {
-	self, err := registry.self()
-	if err != nil {
-		return fmt.Errorf("get self pid: %w", err)
-	}
-
-	err = self.demonitor(pid)
-	if err != nil {
-		return fmt.Errorf("demonitor target pid: %w", err)
-	}
-	return nil
-}
-
-// SetTrapExit can be used to trap signals and exit messages from linked actors.
-// A direct sysmsg.Signal with a sysmsg.ReasonKill cannot be trapped.
-// SetTrapExit can only be called from the running Actor e.g. from the actor's Init, Receive, or After functions.
-func SetTrapExit(trapExit bool) error {
-	self, err := registry.self()
-	if err != nil {
-		return fmt.Errorf("get self pid: %w", err)
-	}
-	self.trapExit.Store(trapExit)
-	return nil
-}
-
-// chanCondOnce is similar to sync.Cond but Signal can be fired (only once) with a value of T which can be received by Wait.
-type chanCondOnce[T any] struct {
-	ch    chan T
-	fired atomic.Bool
-}
-
-func newChanCondOnce[T any]() *chanCondOnce[T] {
-	return &chanCondOnce[T]{
-		ch: make(chan T),
-	}
-}
-
-// Signal signals the goroutine blocked by Wait with the provided value.
-// Signal can only be fired once, any further signals will be ignored.
-// It blocks until Wait receives the value.
-func (c *chanCondOnce[T]) Signal(v T) {
-	if c.fired.CompareAndSwap(false, true) {
-		c.ch <- v
-		close(c.ch)
-	}
-}
-
-// Wait blocks until Signal is fired. It will return immediately if Signal has already been fired.
-func (c *chanCondOnce[T]) Wait() T {
-	return <-c.ch
-}
-
-// Fired returns true if the cond has already signaled.
-func (c *chanCondOnce[T]) Fired() bool {
-	return c.fired.Load()
 }
