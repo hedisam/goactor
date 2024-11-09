@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	clusteringv1 "github.com/hedisam/goactor/gen/clustering/v1"
+	clusteringv1 "github.com/hedisam/goactor/internal/gen/clustering/v1"
+	"github.com/hedisam/goactor/sysmsg"
 )
 
 type MessageMarshaller func(msg any) ([]byte, error)
@@ -25,27 +26,51 @@ func NewGRPCDispatcher(client clusteringv1.NodeServiceClient, marshaller Message
 }
 
 func (m *GRPCDispatcher) PushMessage(ctx context.Context, msg any) error {
-	return m.push(ctx, msg, false)
-}
-
-func (m *GRPCDispatcher) PushSystemMessage(ctx context.Context, msg any) error {
-	return m.push(ctx, msg, true)
-}
-
-func (m *GRPCDispatcher) push(ctx context.Context, msg any, sysMessage bool) error {
 	data, err := m.marshaller(msg)
 	if err != nil {
 		return fmt.Errorf("marshal message: %w", err)
 	}
 	_, err = m.client.Send(ctx, &clusteringv1.SendRequest{
-		Ref: m.selfRef,
-		Message: &clusteringv1.Message{
-			Data:        data,
-			IsSystemMsg: sysMessage,
+		RecipientRef: m.selfRef,
+		Message: &clusteringv1.SendRequest_UserMessage{
+			UserMessage: &clusteringv1.UserMessage{
+				Data: data,
+			},
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("send via node client: %w", err)
+		return fmt.Errorf("user message via node dispatcher: %w", err)
+	}
+	return nil
+}
+
+func (m *GRPCDispatcher) PushSystemMessage(ctx context.Context, msg any) error {
+	req := &clusteringv1.SendRequest{
+		RecipientRef: m.selfRef,
+	}
+
+	switch t := msg.(type) {
+	case *clusteringv1.SystemMessage:
+		req.Message = &clusteringv1.SendRequest_SystemMessage{
+			SystemMessage: t,
+		}
+	case *sysmsg.Message:
+		data, err := m.marshaller(msg)
+		if err != nil {
+			return fmt.Errorf("could not marshal internal message: %w", err)
+		}
+		req.Message = &clusteringv1.SendRequest_InternalMessage{
+			InternalMessage: &clusteringv1.InternalMessage{
+				Data: data,
+			},
+		}
+	default:
+		return fmt.Errorf("unknown system message type: %T", msg)
+	}
+
+	_, err := m.client.Send(ctx, req)
+	if err != nil {
+		return fmt.Errorf("system message via node dispatcher: %w", err)
 	}
 	return nil
 }

@@ -4,31 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
-	"golang.org/x/sync/singleflight"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
-	clusteringv1 "github.com/hedisam/goactor/gen/clustering/v1"
+	clusteringv1 "github.com/hedisam/goactor/internal/gen/clustering/v1"
 	"github.com/hedisam/goactor/internal/intprocess"
 	"github.com/hedisam/goactor/internal/mailbox"
+	"github.com/hedisam/goactor/internal/registry"
 )
 
 var node *LocalNode
 
 type LocalNode struct {
-	server *localNodeServer
-
-	nodesGroup     singleflight.Group
-	nodeConnsMu    sync.RWMutex
-	nodeAddrToConn map[string]*grpcConn
+	server   *localNodeServer
+	nodesReg *registry.RemoteNodeRegistry
 }
 
 func initLocalNode(server *localNodeServer) {
 	node = &LocalNode{
-		server:         server,
-		nodeAddrToConn: make(map[string]*grpcConn),
+		server:   server,
+		nodesReg: registry.NewRemoteNodeRegistry(logger),
 	}
 }
 
@@ -36,8 +29,9 @@ func Node() *LocalNode {
 	return node
 }
 
+// Spawn spawns a remote actor and registers it with the local node actor.
 func (n *LocalNode) Spawn(ctx context.Context, nodeAddr string, actor Actor) (*PID, error) {
-	conn, err := n.getNodeConn(nodeAddr)
+	client, err := n.nodesReg.GetOrCreateClient(nodeAddr)
 	if err != nil {
 		return nil, fmt.Errorf("could not get or create client node: %w", err)
 	}
@@ -48,8 +42,7 @@ func (n *LocalNode) Spawn(ctx context.Context, nodeAddr string, actor Actor) (*P
 	}
 
 	actorSig := generateActorTypeSig(actor)
-	clusteringClient := clusteringv1.NewNodeServiceClient(conn.conn)
-	resp, err := clusteringClient.Spawn(ctx, &clusteringv1.SpawnRequest{
+	resp, err := client.Client.Spawn(ctx, &clusteringv1.SpawnRequest{
 		ActorSignature: actorSig,
 		ActorData:      data,
 	})
@@ -57,16 +50,21 @@ func (n *LocalNode) Spawn(ctx context.Context, nodeAddr string, actor Actor) (*P
 		return nil, fmt.Errorf("spawn remote actor: %w", err)
 	}
 
-	return &PID{
+	pid := &PID{
 		internalPID: intprocess.NewNodeProcess(
+			logger,
+			client.CloseCh,
 			resp.GetRef(),
+			n.Addr(),
 			mailbox.NewGRPCDispatcher(
-				clusteringClient,
+				client.Client,
 				marshalNodeMessage,
 				resp.GetRef(),
 			),
 		),
-	}, nil
+	}
+
+	return pid, nil
 }
 
 func (n *LocalNode) RegisterActorType(actor Actor, factory ActorFactory) {
@@ -79,46 +77,4 @@ func (n *LocalNode) UnregisterActorType(actor Actor) {
 
 func (n *LocalNode) Addr() string {
 	return n.server.addr
-}
-
-func (n *LocalNode) getNodeConn(addr string) (*grpcConn, error) {
-	var conn *grpcConn
-	_, err, _ := n.nodesGroup.Do(addr, func() (any, error) {
-		var err error
-		conn, err = n._getOrCreateNodeConn(addr)
-		if err != nil {
-			return nil, fmt.Errorf(" get or create node conn: %w", err)
-		}
-		return conn, nil
-	})
-	return conn, err
-}
-
-// _getOrCreateNodeConn only to be called from getNodeConn.
-func (n *LocalNode) _getOrCreateNodeConn(addr string) (*grpcConn, error) {
-	n.nodeConnsMu.RLock()
-	c, ok := n.nodeAddrToConn[addr]
-	n.nodeConnsMu.RUnlock()
-	if ok {
-		return c, nil
-	}
-
-	conn, err := grpc.NewClient(
-		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultServiceConfig(`{
-				"healthCheckConfig": {
-					"serviceName": ""
-				}
-			}`),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create new grpc client connection: %w", err)
-	}
-
-	c = &grpcConn{conn: conn}
-	n.nodeConnsMu.Lock()
-	n.nodeAddrToConn[addr] = c
-	n.nodeConnsMu.Unlock()
-	return c, nil
 }

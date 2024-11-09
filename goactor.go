@@ -55,6 +55,7 @@ func init() {
 		logger.Error("Failed to enable clustering", "error", err)
 		os.Exit(1)
 	}
+
 	initLocalNode(ns)
 }
 

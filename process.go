@@ -14,7 +14,6 @@ func Register(name string, pid *PID) error {
 
 // Unregister disassociates a PID from the given name.
 func Unregister(name string) {
-	// todo: add support for node actors
 	registry.UnregisterNamed(name)
 }
 

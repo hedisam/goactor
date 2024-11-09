@@ -1,6 +1,10 @@
 package sysmsg
 
-import "errors"
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+)
 
 // Type represents the type of system message.
 type Type string
@@ -23,6 +27,34 @@ type Message struct {
 	ProcessID string
 	// Reason is the reason of termination.
 	Reason Reason
+}
+
+// UnmarshalJSON custom unmarshaller to successfully unmarshal Reason which is defined as type error.
+func (m *Message) UnmarshalJSON(bytes []byte) error {
+	var mu = struct {
+		Type      Type
+		ProcessID string
+		Reason    any
+	}{}
+
+	err := json.Unmarshal(bytes, &mu)
+	if err != nil {
+		return err
+	}
+
+	m.Type = mu.Type
+	m.ProcessID = mu.ProcessID
+	switch mu.Reason {
+	case ReasonNormal.Error():
+		m.Reason = ReasonNormal
+	case ReasonShutdown.Error():
+		m.Reason = ReasonShutdown
+	case ReasonKill.Error():
+		m.Reason = ReasonKill
+	default:
+		m.Reason = fmt.Errorf("%v", mu.Reason)
+	}
+	return nil
 }
 
 // Reason is an internal notifications about process termination or exit reasons.

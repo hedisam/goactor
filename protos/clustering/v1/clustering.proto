@@ -4,32 +4,29 @@ package clustering.v1;
 
 option go_package = "github.com/hedisam/goactor/gen/protos/clustering/v1;clusteringv1";
 
-message Message {
+message UserMessage {
   bytes data = 1;
-  bool is_system_msg = 2;
 }
 
-message SystemRequest {
+message InternalMessage {
+  bytes data = 1;
+}
+
+message SystemMessage {
+  string sender_ref = 1;
+  string sender_node = 2;
   oneof request {
-    Link link = 1;
-    Unlink unlink = 2;
-    Monitor monitor = 3;
-    Demonitor demonitor = 4;
+    Link link = 100;
+    Unlink unlink = 101;
+    Monitor monitor = 102;
+    Demonitor demonitor = 103;
   }
 }
 
-message Link {
-  string linker_ref = 1;
-}
+message Link {}
 
-message Unlink {
-  string linker_ref = 1;
-}
+message Unlink {}
 
-message Monitor {
-  string monitor_ref = 1;
-}
+message Monitor {}
 
-message Demonitor {
-  string monitor_ref = 1;
-}
+message Demonitor {}

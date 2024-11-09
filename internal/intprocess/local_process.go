@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sync/atomic"
 	"time"
 
@@ -158,7 +157,6 @@ func (p *LocalProcess) AcceptDemonitor(monitorRef string) {
 // Disposed reports whether this PID is disposed or not.
 // Disposed actors neither can be linked/monitored nor can receive messages.
 func (p *LocalProcess) disposed() bool {
-	// todo: anyone calling disposed() should probably lock the disposedFlag
 	return p == nil || p.disposedFlag.Load()
 }
 
@@ -183,6 +181,7 @@ func (p *LocalProcess) run(ctx context.Context, msgHandler HandlerFunc, afterFun
 		}
 		if isSysMsg {
 			delegate, propagate, err := p.handleSystemMessage(msg)
+			p.logger.Info("System message handled", "delegate", delegate, "propagate", propagate)
 			switch {
 			case err != nil:
 				return nil, fmt.Errorf("handle system message: %w", err)
@@ -210,6 +209,8 @@ func (p *LocalProcess) handleSystemMessage(sysMsg any) (delegate *sysmsg.Message
 
 	trapExit := p.trapExit.Load()
 
+	p.logger.Info("Handling system message", "msg", msg, "trap_exit", trapExit)
+
 	switch msg.Type {
 	case sysmsg.Signal:
 		// it's a direct termination signal
@@ -232,7 +233,7 @@ func (p *LocalProcess) handleSystemMessage(sysMsg any) (delegate *sysmsg.Message
 			// ignore the message
 			return nil, nil, nil
 		default:
-			return msg, nil, nil
+			return nil, msg, nil
 		}
 	default:
 		return nil, nil, fmt.Errorf("system message with unknown type received: %+v", msg)
@@ -245,10 +246,11 @@ func (p *LocalProcess) dispose(ctx context.Context, propagate *sysmsg.Message, r
 
 	relationTypeToPIDs := p.relations.TypeToRelatedPIDs()
 
-	monitoredActors := relationTypeToPIDs[relationMonitored]
-	for pid := range slices.Values(monitoredActors) {
-		p.relations.Remove(pid.Ref(), relationMonitor)
-	}
+	// todo: send accept-demonitor request to monitored actors
+	//monitoredActors := relationTypeToPIDs[relationMonitored]
+	//for pid := range slices.Values(monitoredActors) {
+	//	p.relations.Remove(pid.Ref(), relationMonitor)
+	//}
 
 	var reason sysmsg.Reason
 	switch {
@@ -267,44 +269,6 @@ func (p *LocalProcess) dispose(ctx context.Context, propagate *sysmsg.Message, r
 		slog.String("reason", reason.Error()),
 	)
 
-	p.notify(ctx, sysmsg.Exit, reason, relationTypeToPIDs[relationLinked]...)
-	p.notify(ctx, sysmsg.Down, reason, relationTypeToPIDs[relationMonitor]...)
-}
-
-func (p *LocalProcess) notify(ctx context.Context, msgType sysmsg.Type, reason sysmsg.Reason, pids ...PID) {
-	if len(pids) == 0 {
-		return
-	}
-
-	// the actor may have been terminated due to a canceled context, therefore we need to make sure we have a
-	// non canceled context in order to be able to notify the related actors
-	select {
-	case <-ctx.Done():
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), time.Second*5)
-		defer cancel()
-	default:
-	}
-
-	// todo: notify concurrently via a worker pool?
-	notify := func(who PID) error {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
-		return who.PushSystemMessage(ctx, &sysmsg.Message{
-			Type:      msgType,
-			ProcessID: p.ref,
-			Reason:    reason,
-		})
-	}
-
-	for pid := range slices.Values(pids) {
-		err := notify(pid)
-		if err != nil {
-			p.logger.Warn("Could not send termination message to related actor",
-				slog.Any("error", err),
-				slog.String("actor", p.ref),
-				slog.String("related_actor", pid.Ref()),
-			)
-		}
-	}
+	notify(ctx, p.logger, p.ref, sysmsg.Exit, reason, relationTypeToPIDs[relationLinked]...)
+	notify(ctx, p.logger, p.ref, sysmsg.Down, reason, relationTypeToPIDs[relationMonitor]...)
 }

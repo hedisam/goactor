@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +23,10 @@ type Dispatcher interface {
 type PID interface {
 	Dispatcher
 	Ref() string
+	Link(linkee PID) error
+	Unlink(linkee PID) error
+	Monitor(monitored PID) error
+	Demonitor(monitored PID) error
 	AcceptLink(linker PID) error
 	AcceptUnlink(linkerRef string)
 	AcceptMonitor(pid PID) error
@@ -105,4 +110,42 @@ func (c *chanCondOnce[T]) Wait() T {
 // Fired returns true if the cond has already signaled.
 func (c *chanCondOnce[T]) Fired() bool {
 	return c.fired.Load()
+}
+
+func notify(ctx context.Context, logger *slog.Logger, notifierRef string, msgType sysmsg.Type, reason sysmsg.Reason, pids ...PID) {
+	if len(pids) == 0 {
+		return
+	}
+
+	// the actor may have been terminated due to a canceled context, therefore we need to make sure we have a
+	// non canceled context in order to be able to notify the related actors
+	select {
+	case <-ctx.Done():
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), time.Second*5)
+		defer cancel()
+	default:
+	}
+
+	// todo: notify concurrently via a worker pool?
+	notify := func(who PID) error {
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		return who.PushSystemMessage(ctx, &sysmsg.Message{
+			Type:      msgType,
+			ProcessID: notifierRef,
+			Reason:    reason,
+		})
+	}
+
+	for pid := range slices.Values(pids) {
+		err := notify(pid)
+		if err != nil {
+			logger.Warn("Could not send termination message to related actor",
+				slog.Any("error", err),
+				slog.String("actor", notifierRef),
+				slog.String("related_actor", pid.Ref()),
+			)
+		}
+	}
 }

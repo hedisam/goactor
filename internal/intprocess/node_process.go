@@ -2,23 +2,36 @@ package intprocess
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"sync/atomic"
 
-	clusteringv1 "github.com/hedisam/goactor/gen/clustering/v1"
+	clusteringv1 "github.com/hedisam/goactor/internal/gen/clustering/v1"
+	"github.com/hedisam/goactor/sysmsg"
 )
 
 var _ PID = &NodeProcess{}
 
 type NodeProcess struct {
-	ref        string
-	dispatcher Dispatcher
+	logger        *slog.Logger
+	ref           string
+	localNodeAddr string
+	dispatcher    Dispatcher
+	relations     *relations
+	disposedFlag  atomic.Bool
 }
 
-func NewNodeProcess(ref string, dispatcher Dispatcher) *NodeProcess {
-	return &NodeProcess{
-		ref:        ref,
-		dispatcher: dispatcher,
+func NewNodeProcess(logger *slog.Logger, connectionCloseChan <-chan struct{}, ref, localNodeAddr string, dispatcher Dispatcher) *NodeProcess {
+	p := &NodeProcess{
+		logger:        logger,
+		ref:           ref,
+		localNodeAddr: localNodeAddr,
+		dispatcher:    dispatcher,
+		relations:     newRelations(),
 	}
+	p.monitorConnection(connectionCloseChan)
+	return p
 }
 
 func (p *NodeProcess) Ref() string {
@@ -33,62 +46,129 @@ func (p *NodeProcess) PushSystemMessage(ctx context.Context, msg any) error {
 	return p.dispatcher.PushSystemMessage(ctx, msg)
 }
 
+func (p *NodeProcess) Link(linkee PID) error {
+	if p.disposed() {
+		return ErrSelfDisposed
+	}
+
+	p.relations.Add(linkee, relationLinked)
+	return nil
+}
+
+func (p *NodeProcess) Unlink(linkee PID) error {
+	if p.disposed() {
+		return ErrSelfDisposed
+	}
+	p.relations.Remove(linkee.Ref(), relationLinked)
+	return nil
+}
+
+func (p *NodeProcess) Monitor(monitored PID) error {
+	if p.disposed() {
+		return ErrSelfDisposed
+	}
+	p.relations.Add(monitored, relationMonitored)
+	return nil
+}
+
+func (p *NodeProcess) Demonitor(monitored PID) error {
+	if p.disposed() {
+		return ErrSelfDisposed
+	}
+	p.relations.Remove(monitored.Ref(), relationMonitored)
+	return nil
+}
+
 func (p *NodeProcess) AcceptLink(linker PID) error {
-	err := p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemRequest{
-		Request: &clusteringv1.SystemRequest_Link{
-			Link: &clusteringv1.Link{
-				LinkerRef: linker.Ref(),
-			},
+	if p.disposed() {
+		return ErrTargetDisposed
+	}
+
+	err := p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemMessage{
+		SenderRef:  linker.Ref(),
+		SenderNode: p.localNodeAddr,
+		Request: &clusteringv1.SystemMessage_Link{
+			Link: &clusteringv1.Link{},
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("send accept link request to target node actor: %w", err)
 	}
 
+	p.relations.Add(linker, relationLinked)
+
 	return nil
 }
 
 func (p *NodeProcess) AcceptUnlink(linkerRef string) {
-	_ = p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemRequest{
-		Request: &clusteringv1.SystemRequest_Unlink{
-			Unlink: &clusteringv1.Unlink{
-				LinkerRef: linkerRef,
-			},
+	if p.disposed() {
+		return
+	}
+
+	p.relations.Remove(linkerRef, relationLinked)
+
+	_ = p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemMessage{
+		SenderRef:  linkerRef,
+		SenderNode: p.localNodeAddr,
+		Request: &clusteringv1.SystemMessage_Unlink{
+			Unlink: &clusteringv1.Unlink{},
 		},
 	})
-	//if err != nil {
-	//	return fmt.Errorf("send accept unlink request to target node actor: %w", err)
-	//}
-	//
-	//return nil
 }
 
 func (p *NodeProcess) AcceptMonitor(monitor PID) error {
-	err := p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemRequest{
-		Request: &clusteringv1.SystemRequest_Monitor{
-			Monitor: &clusteringv1.Monitor{
-				MonitorRef: monitor.Ref(),
-			},
+	if p.disposed() {
+		return ErrTargetDisposed
+	}
+
+	err := p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemMessage{
+		SenderRef:  monitor.Ref(),
+		SenderNode: p.localNodeAddr,
+		Request: &clusteringv1.SystemMessage_Monitor{
+			Monitor: &clusteringv1.Monitor{},
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("send accept monitor request to target node actor: %w", err)
 	}
 
+	p.relations.Add(monitor, relationMonitor)
+
 	return nil
 }
 
 func (p *NodeProcess) AcceptDemonitor(monitorRef string) {
-	_ = p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemRequest{
-		Request: &clusteringv1.SystemRequest_Demonitor{
-			Demonitor: &clusteringv1.Demonitor{
-				MonitorRef: monitorRef,
-			},
+	if p.disposed() {
+		return
+	}
+
+	p.relations.Remove(monitorRef, relationMonitor)
+
+	_ = p.dispatcher.PushSystemMessage(context.Background(), &clusteringv1.SystemMessage{
+		Request: &clusteringv1.SystemMessage_Demonitor{
+			Demonitor: &clusteringv1.Demonitor{},
 		},
 	})
-	//if err != nil {
-	//	return fmt.Errorf("send accept demonitor request to target node actor: %w", err)
-	//}
-	//
-	//return nil
+}
+
+func (p *NodeProcess) disposed() bool {
+	return p == nil || p.disposedFlag.Load()
+}
+
+func (p *NodeProcess) monitorConnection(closeCh <-chan struct{}) {
+	go func() {
+		// todo: this only monitors the client connection; we should also terminate if the remote actor is exited.
+		<-closeCh
+		p.disposedFlag.Store(true)
+		relationTypeToPIDs := p.relations.TypeToRelatedPIDs()
+
+		reason := errors.New("no connection")
+		p.logger.Info("Node actor is getting disposed due to connection error, notifying related actors",
+			slog.String("actor", p.ref),
+			slog.String("reason", reason.Error()),
+		)
+
+		notify(context.Background(), p.logger, p.ref, sysmsg.Exit, reason, relationTypeToPIDs[relationLinked]...)
+		notify(context.Background(), p.logger, p.ref, sysmsg.Down, reason, relationTypeToPIDs[relationMonitor]...)
+	}()
 }

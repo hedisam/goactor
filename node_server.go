@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/hedisam/goactor/sysmsg"
 	"log/slog"
 	"net"
 	"reflect"
@@ -15,23 +16,23 @@ import (
 	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	clusteringv1 "github.com/hedisam/goactor/gen/clustering/v1"
+	clusteringv1 "github.com/hedisam/goactor/internal/gen/clustering/v1"
 	"github.com/hedisam/goactor/internal/intprocess"
+	"github.com/hedisam/goactor/internal/mailbox"
 	"github.com/hedisam/goactor/internal/registry"
 )
 
 var _ clusteringv1.NodeServiceServer = &localNodeServer{}
-
-type grpcConn struct {
-	conn *grpc.ClientConn
-	mu   sync.RWMutex
-}
 
 type localNodeServer struct {
 	addr string
 
 	registeredActorsMu   sync.RWMutex
 	sigToRegisteredActor map[string]ActorFactory
+
+	remoteRefToPID map[string]intprocess.PID
+	remoteRefMu    sync.RWMutex
+	remoteNodeReg  *registry.RemoteNodeRegistry
 }
 
 func startLocalNodeServer() (*localNodeServer, error) {
@@ -43,6 +44,8 @@ func startLocalNodeServer() (*localNodeServer, error) {
 	ns := &localNodeServer{
 		addr:                 l.Addr().String(),
 		sigToRegisteredActor: make(map[string]ActorFactory),
+		remoteRefToPID:       make(map[string]intprocess.PID),
+		remoteNodeReg:        registry.NewRemoteNodeRegistry(logger),
 	}
 
 	s := grpc.NewServer()
@@ -84,22 +87,40 @@ func (s *localNodeServer) Spawn(ctx context.Context, req *clusteringv1.SpawnRequ
 }
 
 func (s *localNodeServer) Send(ctx context.Context, req *clusteringv1.SendRequest) (*clusteringv1.SendResponse, error) {
-	pid, ok := registry.LocalProcessByRef(req.GetRef())
+	pid, ok := registry.LocalProcessByRef(req.GetRecipientRef())
 	if !ok {
-		return nil, fmt.Errorf("no running actor available with the given ID %q", req.GetRef())
+		return nil, fmt.Errorf("no running actor available with the given ID %q", req.GetRecipientRef())
 	}
 
-	msg, err := unmarshalNodeMessage(req.GetMessage().GetData())
-	if err != nil {
-		return nil, fmt.Errorf("could not unmarshal message: %w", err)
-	}
-
-	if systemRequest, ok := msg.(*clusteringv1.SystemRequest); ok {
-		err = s.handleSystemRequest(pid, systemRequest)
+	if sysMessage := req.GetSystemMessage(); sysMessage != nil {
+		err := s.handleSystemMessage(pid, sysMessage)
 		if err != nil {
-			return nil, fmt.Errorf("handle system request: %w", err)
+			return nil, fmt.Errorf("handle system message: %w", err)
 		}
 		return &clusteringv1.SendResponse{}, nil
+	}
+
+	if internalMessage := req.GetInternalMessage(); internalMessage != nil {
+		var m map[string]*sysmsg.Message
+		err := json.Unmarshal(internalMessage.GetData(), &m)
+		if err != nil {
+			return nil, fmt.Errorf("could not unmarshal internal message: %w", err)
+		}
+		err = pid.PushSystemMessage(ctx, m["data"])
+		if err != nil {
+			return nil, fmt.Errorf("could not push internal message: %w", err)
+		}
+		return &clusteringv1.SendResponse{}, nil
+	}
+
+	message := req.GetUserMessage()
+	if message == nil {
+		return nil, fmt.Errorf("unknown message type: %T", req.GetMessage())
+	}
+
+	msg, err := unmarshalNodeMessage(message.GetData())
+	if err != nil {
+		return nil, fmt.Errorf("could not unmarshal message: %w", err)
 	}
 
 	err = Send(ctx, &PID{internalPID: pid}, msg)
@@ -110,29 +131,49 @@ func (s *localNodeServer) Send(ctx context.Context, req *clusteringv1.SendReques
 	return &clusteringv1.SendResponse{}, nil
 }
 
-func (s *localNodeServer) handleSystemRequest(pid *intprocess.LocalProcess, req *clusteringv1.SystemRequest) error {
-	// todo: need to have a remote type but local process for the remote pid
-	switch req.GetRequest().(type) {
-	case *clusteringv1.SystemRequest_Link:
-		err := pid.AcceptLink(nil)
+func (s *localNodeServer) handleSystemMessage(pid *intprocess.LocalProcess, msg *clusteringv1.SystemMessage) error {
+	senderPID, err := s.getOrCreateRemotePID(msg.GetSenderRef(), msg.GetSenderNode())
+	if err != nil {
+		return fmt.Errorf("could not get system message pid: %w", err)
+	}
+
+	switch msg.GetRequest().(type) {
+	case *clusteringv1.SystemMessage_Link:
+		err = senderPID.Link(pid)
+		if err != nil {
+			return fmt.Errorf("link: %w", err)
+		}
+		err = pid.AcceptLink(senderPID)
 		if err != nil {
 			return fmt.Errorf("linkee accept link: %w", err)
 		}
 		return nil
-	case *clusteringv1.SystemRequest_Unlink:
-		pid.AcceptUnlink(req.GetUnlink().GetLinkerRef())
+	case *clusteringv1.SystemMessage_Unlink:
+		err = senderPID.Unlink(pid)
+		if err != nil {
+			return fmt.Errorf("unlink: %w", err)
+		}
+		pid.AcceptUnlink(senderPID.Ref())
 		return nil
-	case *clusteringv1.SystemRequest_Monitor:
-		err := pid.AcceptMonitor(nil)
+	case *clusteringv1.SystemMessage_Monitor:
+		err = senderPID.Demonitor(pid)
+		if err != nil {
+			return fmt.Errorf("monitor: %w", err)
+		}
+		err = pid.AcceptMonitor(senderPID)
 		if err != nil {
 			return fmt.Errorf("monitoree accept monitor: %w", err)
 		}
 		return nil
-	case *clusteringv1.SystemRequest_Demonitor:
-		pid.AcceptDemonitor(req.GetMonitor().GetMonitorRef())
+	case *clusteringv1.SystemMessage_Demonitor:
+		err = senderPID.Demonitor(pid)
+		if err != nil {
+			return fmt.Errorf("demonitor: %w", err)
+		}
+		pid.AcceptDemonitor(senderPID.Ref())
 		return nil
 	default:
-		return fmt.Errorf("unknown node system request received: %T", req.GetRequest())
+		return fmt.Errorf("unknown node system request received: %T", msg.GetRequest())
 	}
 }
 
@@ -155,6 +196,38 @@ func (s *localNodeServer) unregisterActorType(actor Actor) {
 	s.registeredActorsMu.Lock()
 	delete(s.sigToRegisteredActor, sig)
 	s.registeredActorsMu.Unlock()
+}
+
+func (s *localNodeServer) getOrCreateRemotePID(ref, nodeAddr string) (intprocess.PID, error) {
+	s.remoteRefMu.RLock()
+	remotePID, ok := s.remoteRefToPID[ref]
+	if ok {
+		s.remoteRefMu.RUnlock()
+		return remotePID, nil
+	}
+	s.remoteRefMu.RUnlock()
+
+	client, err := s.remoteNodeReg.GetOrCreateClient(nodeAddr)
+	if err != nil {
+		return nil, fmt.Errorf("could not get or create sender's conn: %w", err)
+	}
+
+	pid := intprocess.NewNodeProcess(
+		logger,
+		client.CloseCh,
+		ref,
+		nodeAddr,
+		mailbox.NewGRPCDispatcher(
+			client.Client,
+			marshalNodeMessage,
+			ref,
+		),
+	)
+	s.remoteRefMu.Lock()
+	s.remoteRefToPID[ref] = pid
+	s.remoteRefMu.Unlock()
+
+	return pid, nil
 }
 
 func marshalNodeMessage(msg any) ([]byte, error) {

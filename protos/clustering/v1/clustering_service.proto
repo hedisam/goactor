@@ -21,8 +21,12 @@ message SpawnResponse {
 }
 
 message SendRequest {
-  string ref = 2;
-  Message message = 3;
+  string recipient_ref = 1;
+  oneof message {
+    UserMessage user_message = 10;
+    SystemMessage system_message = 11;
+    InternalMessage internal_message = 12;
+  }
 }
 
 message SendResponse {}
