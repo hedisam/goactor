@@ -17,12 +17,12 @@ type NodeProcess struct {
 	logger        *slog.Logger
 	ref           string
 	localNodeAddr string
-	dispatcher    Dispatcher
+	dispatcher    dispatcher
 	relations     *relations
 	disposedFlag  atomic.Bool
 }
 
-func NewNodeProcess(logger *slog.Logger, connectionCloseChan <-chan struct{}, ref, localNodeAddr string, dispatcher Dispatcher) *NodeProcess {
+func NewNodeProcess(logger *slog.Logger, connectionCloseChan <-chan struct{}, ref, localNodeAddr string, dispatcher dispatcher) *NodeProcess {
 	p := &NodeProcess{
 		logger:        logger,
 		ref:           ref,
@@ -38,11 +38,11 @@ func (p *NodeProcess) Ref() string {
 	return p.ref
 }
 
-func (p *NodeProcess) PushMessage(ctx context.Context, msg any) error {
+func (p *NodeProcess) SendMessage(ctx context.Context, msg any) error {
 	return p.dispatcher.PushMessage(ctx, msg)
 }
 
-func (p *NodeProcess) PushSystemMessage(ctx context.Context, msg any) error {
+func (p *NodeProcess) SendSystemMessage(ctx context.Context, msg any) error {
 	return p.dispatcher.PushSystemMessage(ctx, msg)
 }
 

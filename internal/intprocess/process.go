@@ -15,13 +15,14 @@ import (
 	"github.com/hedisam/goactor/sysmsg"
 )
 
-type Dispatcher interface {
+type dispatcher interface {
 	PushMessage(ctx context.Context, msg any) error
 	PushSystemMessage(ctx context.Context, msg any) error
 }
 
 type PID interface {
-	Dispatcher
+	SendMessage(ctx context.Context, msg any) error
+	SendSystemMessage(ctx context.Context, msg any) error
 	Ref() string
 	Link(linkee PID) error
 	Unlink(linkee PID) error
@@ -131,7 +132,7 @@ func notify(ctx context.Context, logger *slog.Logger, notifierRef string, msgTyp
 	notify := func(who PID) error {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		return who.PushSystemMessage(ctx, &sysmsg.Message{
+		return who.SendSystemMessage(ctx, &sysmsg.Message{
 			Type:      msgType,
 			ProcessID: notifierRef,
 			Reason:    reason,

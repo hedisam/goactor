@@ -36,14 +36,14 @@ type LocalProcess struct {
 	logger     *slog.Logger
 	ref        string
 	receiver   localReceiver
-	dispatcher Dispatcher
+	dispatcher dispatcher
 	relations  *relations
 
 	trapExit     atomic.Bool
 	disposedFlag atomic.Bool
 }
 
-func newLocalProcess(logger *slog.Logger, ref string, r localReceiver, d Dispatcher) *LocalProcess {
+func newLocalProcess(logger *slog.Logger, ref string, r localReceiver, d dispatcher) *LocalProcess {
 	return &LocalProcess{
 		logger:     logger,
 		ref:        ref,
@@ -57,11 +57,11 @@ func (p *LocalProcess) Ref() string {
 	return p.ref
 }
 
-func (p *LocalProcess) PushMessage(ctx context.Context, msg any) error {
+func (p *LocalProcess) SendMessage(ctx context.Context, msg any) error {
 	return p.dispatcher.PushMessage(ctx, msg)
 }
 
-func (p *LocalProcess) PushSystemMessage(ctx context.Context, msg any) error {
+func (p *LocalProcess) SendSystemMessage(ctx context.Context, msg any) error {
 	return p.dispatcher.PushSystemMessage(ctx, msg)
 }
 

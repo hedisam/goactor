@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/hedisam/goactor/sysmsg"
 	"log/slog"
 	"net"
 	"reflect"
@@ -20,6 +19,7 @@ import (
 	"github.com/hedisam/goactor/internal/intprocess"
 	"github.com/hedisam/goactor/internal/mailbox"
 	"github.com/hedisam/goactor/internal/registry"
+	"github.com/hedisam/goactor/sysmsg"
 )
 
 var _ clusteringv1.NodeServiceServer = &localNodeServer{}
@@ -106,7 +106,7 @@ func (s *localNodeServer) Send(ctx context.Context, req *clusteringv1.SendReques
 		if err != nil {
 			return nil, fmt.Errorf("could not unmarshal internal message: %w", err)
 		}
-		err = pid.PushSystemMessage(ctx, m["data"])
+		err = pid.SendSystemMessage(ctx, m["data"])
 		if err != nil {
 			return nil, fmt.Errorf("could not push internal message: %w", err)
 		}
@@ -123,7 +123,7 @@ func (s *localNodeServer) Send(ctx context.Context, req *clusteringv1.SendReques
 		return nil, fmt.Errorf("could not unmarshal message: %w", err)
 	}
 
-	err = Send(ctx, &PID{internalPID: pid}, msg)
+	err = pid.SendMessage(ctx, msg)
 	if err != nil {
 		return nil, fmt.Errorf("send to pid: %w", err)
 	}

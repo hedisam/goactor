@@ -152,7 +152,7 @@ func Send(ctx context.Context, d Dispatcher, msg any) error {
 		return registry.ErrSelfDisposed
 	}
 
-	err := pid.internalPID.PushMessage(ctx, msg)
+	err := pid.internalPID.SendMessage(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("push message via dispatcher: %w", err)
 	}
